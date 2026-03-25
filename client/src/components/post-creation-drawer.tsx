@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sheet,
   SheetContent,
@@ -16,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import {
   Popover,
   PopoverContent,
@@ -37,15 +39,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 import { PlatformIcon, getPlatformName } from "./platform-icon";
-import { Sparkles, CalendarIcon, Clock, ImagePlus, X, AlertTriangle, Send } from "lucide-react";
+import {
+  Sparkles,
+  CalendarIcon,
+  Clock,
+  ImagePlus,
+  X,
+  AlertTriangle,
+  Send,
+  Layers,
+  ChevronDown,
+} from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import type { PlatformType, Post } from "@shared/schema";
+import type { PlatformType, Post, BrandWithAccounts } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
 // ---------------------------------------------------------------------------
-// Per-platform character limits (§4.3)
+// Per-platform character limits
 // ---------------------------------------------------------------------------
 const PLATFORM_CHAR_LIMITS: Record<PlatformType, number> = {
   twitter: 280,
@@ -58,7 +71,6 @@ const PLATFORM_CHAR_LIMITS: Record<PlatformType, number> = {
   youtube: 5000,
 };
 
-// Platforms that require media
 const REQUIRES_IMAGE: PlatformType[] = ["instagram", "pinterest"];
 const REQUIRES_VIDEO: PlatformType[] = ["tiktok", "youtube"];
 
@@ -93,7 +105,7 @@ interface UploadedMedia {
   localPreview?: string;
 }
 
-interface PostCreationDrawerProps {
+export interface PostCreationDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: {
@@ -103,6 +115,7 @@ interface PostCreationDrawerProps {
     scheduledAt: Date | null;
     status: "draft" | "scheduled";
     mediaUrls?: string[];
+    brandId?: string | null;
   }) => void;
   onPublishNow?: (postId: string) => void;
   editPost?: Post | null;
@@ -132,8 +145,18 @@ export function PostCreationDrawer({
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia[]>([]);
+  // Brand picker state
+  const [selectedBrandId, setSelectedBrandId] = useState<string | null>(
+    (editPost as any)?.brandId ?? null
+  );
+  const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Fetch brands for the picker
+  const { data: brands = [] } = useQuery<BrandWithAccounts[]>({
+    queryKey: ["/api/brands"],
+  });
 
   const form = useForm<PostFormValues>({
     resolver: zodResolver(postFormSchema),
@@ -148,6 +171,20 @@ export function PostCreationDrawer({
       aiTone: "professional",
     },
   });
+
+  // ─── Brand picker: apply brand platforms to form ──────────────────────────
+  const applyBrand = (brand: BrandWithAccounts | null) => {
+    setSelectedBrandId(brand?.id ?? null);
+    setBrandPickerOpen(false);
+    if (brand) {
+      const brandPlatforms = Array.from(
+        new Set(brand.accounts.map((a) => a.platform as PlatformType))
+      );
+      form.setValue("platforms", brandPlatforms, { shouldValidate: true });
+    }
+  };
+
+  const selectedBrand = brands.find((b) => b.id === selectedBrandId) ?? null;
 
   const handleSubmit = (values: PostFormValues, asDraft: boolean = false) => {
     let scheduledAt: Date | null = null;
@@ -172,12 +209,11 @@ export function PostCreationDrawer({
       scheduledAt,
       status: asDraft ? "draft" : "scheduled",
       mediaUrls: uploadedMedia.map((m) => m.url),
+      brandId: selectedBrandId,
     });
   };
 
-  // ---------------------------------------------------------------------------
-  // AI content generation (§5.1)
-  // ---------------------------------------------------------------------------
+  // ─── AI content generation ────────────────────────────────────────────────
   const generateWithAI = async () => {
     setIsGenerating(true);
     try {
@@ -193,7 +229,7 @@ export function PostCreationDrawer({
       });
 
       if (!res.ok) throw new Error("AI generation failed");
-      const data = await res.json() as { content: string; hashtags?: string };
+      const data = (await res.json()) as { content: string; hashtags?: string };
       form.setValue("content", data.content);
       if (data.hashtags) {
         form.setValue("hashtags", data.hashtags);
@@ -205,9 +241,7 @@ export function PostCreationDrawer({
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Media upload (§2.2)
-  // ---------------------------------------------------------------------------
+  // ─── Media upload ─────────────────────────────────────────────────────────
   const handleFileChange = useCallback(
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
@@ -216,9 +250,7 @@ export function PostCreationDrawer({
         setIsUploading(true);
         setUploadProgress(0);
 
-        // Local preview
         const localPreview = URL.createObjectURL(file);
-
         const formData = new FormData();
         formData.append("file", file);
 
@@ -274,12 +306,10 @@ export function PostCreationDrawer({
   const characterCount = form.watch("content")?.length || 0;
   const selectedPlatforms = form.watch("platforms") || [];
 
-  // Per-platform character limit warnings
   const charWarnings = selectedPlatforms
     .filter((p) => characterCount > PLATFORM_CHAR_LIMITS[p])
     .map((p) => `${getPlatformName(p)} (limit: ${PLATFORM_CHAR_LIMITS[p]})`);
 
-  // Media requirement warnings
   const hasImage = uploadedMedia.some((m) => m.mimeType.startsWith("image/"));
   const hasVideo = uploadedMedia.some((m) => m.mimeType.startsWith("video/"));
   const mediaWarnings: string[] = [];
@@ -306,13 +336,119 @@ export function PostCreationDrawer({
 
         <Form {...form}>
           <form className="space-y-6">
-            {/* Platform selector */}
+
+            {/* ── Brand picker ─────────────────────────────────────────────── */}
+            {brands.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5" />
+                  Brand
+                </Label>
+                <Popover open={brandPickerOpen} onOpenChange={setBrandPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-between font-normal"
+                    >
+                      {selectedBrand ? (
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="h-3 w-3 rounded-full shrink-0"
+                            style={{ backgroundColor: selectedBrand.color ?? "#6366f1" }}
+                          />
+                          <span className="truncate">{selectedBrand.name}</span>
+                          <span className="text-muted-foreground text-xs">
+                            ({selectedBrand.accounts.length} account
+                            {selectedBrand.accounts.length !== 1 ? "s" : ""})
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">No brand selected</span>
+                      )}
+                      <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-1" align="start">
+                    {/* Clear option */}
+                    <button
+                      type="button"
+                      onClick={() => applyBrand(null)}
+                      className="w-full text-left px-3 py-2 text-sm rounded hover:bg-muted transition-colors text-muted-foreground"
+                    >
+                      No brand (manual platform selection)
+                    </button>
+                    <Separator className="my-1" />
+                    {brands.map((brand) => (
+                      <button
+                        key={brand.id}
+                        type="button"
+                        onClick={() => applyBrand(brand)}
+                        className={cn(
+                          "w-full text-left px-3 py-2 rounded transition-colors space-y-0.5",
+                          selectedBrandId === brand.id
+                            ? "bg-primary/10 text-primary"
+                            : "hover:bg-muted"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-3 w-3 rounded-full shrink-0"
+                            style={{ backgroundColor: brand.color ?? "#6366f1" }}
+                          />
+                          <span className="font-medium text-sm">{brand.name}</span>
+                        </div>
+                        {brand.accounts.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pl-5">
+                            {Array.from(new Set(brand.accounts.map((a) => a.platform))).map((p) => (
+                              <Badge
+                                key={p}
+                                variant="secondary"
+                                className="text-xs px-1 py-0 gap-0.5 h-4"
+                              >
+                                <PlatformIcon platform={p as any} className="h-2.5 w-2.5" />
+                                {getPlatformName(p as any)}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+
+                {/* Show brand accounts when selected */}
+                {selectedBrand && selectedBrand.accounts.length > 0 && (
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 space-y-1">
+                    <p className="text-xs text-muted-foreground font-medium">
+                      Posting to these accounts:
+                    </p>
+                    {selectedBrand.accounts.map((account) => (
+                      <div key={account.id} className="flex items-center gap-2 text-xs">
+                        <PlatformIcon platform={account.platform as any} className="h-3 w-3" />
+                        <span className="font-medium">{account.accountName}</span>
+                        <span className="text-muted-foreground">@{account.accountHandle}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Platform selector ─────────────────────────────────────────── */}
             <FormField
               control={form.control}
               name="platforms"
               render={() => (
                 <FormItem>
-                  <FormLabel>Platforms</FormLabel>
+                  <FormLabel>
+                    Platforms
+                    {selectedBrand && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        (auto-selected from brand)
+                      </span>
+                    )}
+                  </FormLabel>
                   <div className="flex flex-wrap gap-2">
                     {availablePlatforms.map((platform) => (
                       <label
@@ -329,7 +465,9 @@ export function PostCreationDrawer({
                           onCheckedChange={(checked) => {
                             const current = form.getValues("platforms") || [];
                             if (checked) {
-                              form.setValue("platforms", [...current, platform], { shouldValidate: true });
+                              form.setValue("platforms", [...current, platform], {
+                                shouldValidate: true,
+                              });
                             } else {
                               form.setValue(
                                 "platforms",
@@ -350,7 +488,7 @@ export function PostCreationDrawer({
               )}
             />
 
-            {/* Content with AI assist */}
+            {/* ── Content with AI assist ────────────────────────────────────── */}
             <FormField
               control={form.control}
               name="content"
@@ -416,7 +554,7 @@ export function PostCreationDrawer({
               )}
             />
 
-            {/* AI topic and tone */}
+            {/* ── AI topic and tone ─────────────────────────────────────────── */}
             <div className="grid grid-cols-2 gap-3">
               <FormField
                 control={form.control}
@@ -425,7 +563,11 @@ export function PostCreationDrawer({
                   <FormItem>
                     <FormLabel className="text-xs">AI Topic</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. product launch" className="h-8 text-sm" {...field} />
+                      <Input
+                        placeholder="e.g. product launch"
+                        className="h-8 text-sm"
+                        {...field}
+                      />
                     </FormControl>
                   </FormItem>
                 )}
@@ -454,11 +596,10 @@ export function PostCreationDrawer({
               />
             </div>
 
-            {/* Media upload */}
+            {/* ── Media upload ──────────────────────────────────────────────── */}
             <div className="space-y-2">
               <Label>Media</Label>
 
-              {/* Hidden file input */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -468,7 +609,6 @@ export function PostCreationDrawer({
                 onChange={(e) => handleFileChange(e.target.files)}
               />
 
-              {/* Drop zone */}
               <div
                 className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
@@ -479,15 +619,12 @@ export function PostCreationDrawer({
                 }}
               >
                 <ImagePlus className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  Drag and drop or click to upload
-                </p>
+                <p className="text-sm text-muted-foreground">Drag and drop or click to upload</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   PNG, JPG, GIF, WebP up to 10 MB · MP4 up to 100 MB
                 </p>
               </div>
 
-              {/* Upload progress */}
               {isUploading && (
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Uploading… {uploadProgress}%</p>
@@ -495,7 +632,6 @@ export function PostCreationDrawer({
                 </div>
               )}
 
-              {/* Thumbnails */}
               {uploadedMedia.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {uploadedMedia.map((media, i) => (
@@ -525,7 +661,6 @@ export function PostCreationDrawer({
                 </div>
               )}
 
-              {/* Media requirement warnings */}
               {mediaWarnings.length > 0 && (
                 <Alert className="py-2">
                   <AlertTriangle className="h-4 w-4" />
@@ -536,7 +671,7 @@ export function PostCreationDrawer({
               )}
             </div>
 
-            {/* Hashtags */}
+            {/* ── Hashtags ──────────────────────────────────────────────────── */}
             <FormField
               control={form.control}
               name="hashtags"
@@ -550,15 +685,13 @@ export function PostCreationDrawer({
                       data-testid="input-hashtags"
                     />
                   </FormControl>
-                  <p className="text-xs text-muted-foreground">
-                    Separate hashtags with commas
-                  </p>
+                  <p className="text-xs text-muted-foreground">Separate hashtags with commas</p>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* Schedule date/time */}
+            {/* ── Schedule date/time ────────────────────────────────────────── */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -627,7 +760,7 @@ export function PostCreationDrawer({
               />
             </div>
 
-            {/* Action buttons */}
+            {/* ── Action buttons ────────────────────────────────────────────── */}
             <div className="flex gap-2 pt-4 border-t flex-wrap">
               <Button
                 type="button"

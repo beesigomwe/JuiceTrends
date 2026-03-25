@@ -7,6 +7,7 @@ import { fetchAccountStats } from "./account-stats";
 import { publishPostToPlatform, type PublishResult } from "./publisher";
 import { setupMediaUpload } from "./media-upload";
 import { setupAiGenerate } from "./ai-generate";
+import { setupBrandsRoutes } from "./brands-routes";
 import passport from "passport";
 import {
   setupFacebookOAuth,
@@ -27,6 +28,7 @@ export async function registerRoutes(
   setupAuth(app);
   setupMediaUpload(app);
   setupAiGenerate(app);
+  setupBrandsRoutes(app);
 
   // Social platform OAuth flows
   setupTwitterOAuth(app);

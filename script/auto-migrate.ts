@@ -64,6 +64,8 @@ const TARGET_SCHEMA: Record<
     { name: "publish_results", createDef: "JSONB", addDef: "JSONB" },
     // §3.1 — platform-specific metadata (YouTube title, Pinterest boardId, etc.)
     { name: "platform_metadata", createDef: "JSONB", addDef: "JSONB" },
+    // Brands — optional brand association
+    { name: "brand_id", createDef: "VARCHAR", addDef: "VARCHAR" },
   ],
   analytics_data: [
     { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },
@@ -90,12 +92,29 @@ const TARGET_SCHEMA: Record<
     { name: "duration_seconds", createDef: "INTEGER", addDef: "INTEGER" },
     { name: "created_at", createDef: "TIMESTAMP DEFAULT NOW()", addDef: "TIMESTAMP DEFAULT NOW()" },
   ],
-  // §3.1 — post_media join table
+    // §3.1 — post_media join table
   post_media: [
     { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },
     { name: "post_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
     { name: "media_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
     { name: "position", createDef: "INTEGER DEFAULT 0", addDef: "INTEGER DEFAULT 0" },
+  ],
+  // Brands — named groups of social accounts
+  brands: [
+    { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },
+    { name: "user_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
+    { name: "name", createDef: "TEXT NOT NULL", addDef: "TEXT NOT NULL" },
+    { name: "description", createDef: "TEXT", addDef: "TEXT" },
+    { name: "color", createDef: "TEXT DEFAULT '#6366f1'", addDef: "TEXT DEFAULT '#6366f1'" },
+    { name: "logo_url", createDef: "TEXT", addDef: "TEXT" },
+    { name: "created_at", createDef: "TIMESTAMP DEFAULT NOW()", addDef: "TIMESTAMP DEFAULT NOW()" },
+    { name: "updated_at", createDef: "TIMESTAMP DEFAULT NOW()", addDef: "TIMESTAMP DEFAULT NOW()" },
+  ],
+  // brand_accounts — join table linking brands to social accounts
+  brand_accounts: [
+    { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },
+    { name: "brand_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
+    { name: "account_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
   ],
 };
 

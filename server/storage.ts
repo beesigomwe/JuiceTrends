@@ -5,6 +5,11 @@ import {
   type InsertPost,
   type SocialAccount,
   type InsertSocialAccount,
+  type Brand,
+  type InsertBrand,
+  type BrandAccount,
+  type InsertBrandAccount,
+  type BrandWithAccounts,
   type DashboardStats,
   type ChartDataPoint,
 } from "@shared/schema";
@@ -32,17 +37,30 @@ export interface IStorage {
 
   getDashboardStats(userId?: string): Promise<DashboardStats>;
   getChartData(userId?: string): Promise<ChartDataPoint[]>;
+
+  // Brands
+  getBrands(userId: string): Promise<BrandWithAccounts[]>;
+  getBrand(id: string): Promise<BrandWithAccounts | undefined>;
+  createBrand(brand: InsertBrand): Promise<Brand>;
+  updateBrand(id: string, brand: Partial<InsertBrand>): Promise<Brand | undefined>;
+  deleteBrand(id: string): Promise<boolean>;
+  addAccountToBrand(brandId: string, accountId: string): Promise<BrandAccount>;
+  removeAccountFromBrand(brandId: string, accountId: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private posts: Map<string, Post>;
   private accounts: Map<string, SocialAccount>;
+  private brands: Map<string, Brand>;
+  private brandAccounts: Map<string, BrandAccount>;
 
   constructor() {
     this.users = new Map();
     this.posts = new Map();
     this.accounts = new Map();
+    this.brands = new Map();
+    this.brandAccounts = new Map();
 
     this.seedData();
   }
@@ -144,6 +162,7 @@ export class MemStorage implements IStorage {
         clicks: 234,
         publishResults: null,
         platformMetadata: null,
+        brandId: null,
       },
       {
         id: randomUUID(),
@@ -162,6 +181,7 @@ export class MemStorage implements IStorage {
         clicks: 145,
         publishResults: null,
         platformMetadata: null,
+        brandId: null,
       },
       {
         id: randomUUID(),
@@ -180,6 +200,7 @@ export class MemStorage implements IStorage {
         clicks: 0,
         publishResults: null,
         platformMetadata: null,
+        brandId: null,
       },
       {
         id: randomUUID(),
@@ -198,6 +219,7 @@ export class MemStorage implements IStorage {
         clicks: 0,
         publishResults: null,
         platformMetadata: null,
+        brandId: null,
       },
       {
         id: randomUUID(),
@@ -216,6 +238,7 @@ export class MemStorage implements IStorage {
         clicks: 0,
         publishResults: null,
         platformMetadata: null,
+        brandId: null,
       },
       {
         id: randomUUID(),
@@ -234,6 +257,7 @@ export class MemStorage implements IStorage {
         clicks: 0,
         publishResults: null,
         platformMetadata: null,
+        brandId: null,
       },
     ];
 
@@ -303,6 +327,7 @@ export class MemStorage implements IStorage {
       clicks: 0,
       publishResults: null,
       platformMetadata: null,
+      brandId: (insertPost as any).brandId ?? null,
     };
     this.posts.set(id, post);
     return post;
@@ -492,6 +517,93 @@ export class MemStorage implements IStorage {
     }
 
     return data;
+  }
+
+  // ─── Brands ────────────────────────────────────────────────────────────────
+
+  private async resolveBrandAccounts(brandId: string): Promise<SocialAccount[]> {
+    const memberIds = Array.from(this.brandAccounts.values())
+      .filter((ba) => ba.brandId === brandId)
+      .map((ba) => ba.accountId);
+    return memberIds
+      .map((id) => this.accounts.get(id))
+      .filter((a): a is SocialAccount => a !== undefined);
+  }
+
+  async getBrands(userId: string): Promise<BrandWithAccounts[]> {
+    const userBrands = Array.from(this.brands.values()).filter((b) => b.userId === userId);
+    return Promise.all(
+      userBrands.map(async (b) => ({ ...b, accounts: await this.resolveBrandAccounts(b.id) }))
+    );
+  }
+
+  async getBrand(id: string): Promise<BrandWithAccounts | undefined> {
+    const brand = this.brands.get(id);
+    if (!brand) return undefined;
+    return { ...brand, accounts: await this.resolveBrandAccounts(id) };
+  }
+
+  async createBrand(insertBrand: InsertBrand): Promise<Brand> {
+    const id = randomUUID();
+    const brand: Brand = {
+      id,
+      userId: insertBrand.userId,
+      name: insertBrand.name,
+      description: insertBrand.description ?? null,
+      color: insertBrand.color ?? "#6366f1",
+      logoUrl: insertBrand.logoUrl ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.brands.set(id, brand);
+    return brand;
+  }
+
+  async updateBrand(id: string, updates: Partial<InsertBrand>): Promise<Brand | undefined> {
+    const brand = this.brands.get(id);
+    if (!brand) return undefined;
+    const updated: Brand = {
+      ...brand,
+      name: updates.name ?? brand.name,
+      description: updates.description !== undefined ? (updates.description ?? null) : brand.description,
+      color: updates.color ?? brand.color,
+      logoUrl: updates.logoUrl !== undefined ? (updates.logoUrl ?? null) : brand.logoUrl,
+      updatedAt: new Date(),
+    };
+    this.brands.set(id, updated);
+    return updated;
+  }
+
+  async deleteBrand(id: string): Promise<boolean> {
+    if (!this.brands.has(id)) return false;
+    this.brands.delete(id);
+    // cascade-delete brand_accounts
+    for (const [baId, ba] of Array.from(this.brandAccounts.entries())) {
+      if (ba.brandId === id) this.brandAccounts.delete(baId);
+    }
+    return true;
+  }
+
+  async addAccountToBrand(brandId: string, accountId: string): Promise<BrandAccount> {
+    // idempotent
+    const existing = Array.from(this.brandAccounts.values()).find(
+      (ba) => ba.brandId === brandId && ba.accountId === accountId
+    );
+    if (existing) return existing;
+    const id = randomUUID();
+    const ba: BrandAccount = { id, brandId, accountId };
+    this.brandAccounts.set(id, ba);
+    return ba;
+  }
+
+  async removeAccountFromBrand(brandId: string, accountId: string): Promise<boolean> {
+    for (const [id, ba] of Array.from(this.brandAccounts.entries())) {
+      if (ba.brandId === brandId && ba.accountId === accountId) {
+        this.brandAccounts.delete(id);
+        return true;
+      }
+    }
+    return false;
   }
 }
 

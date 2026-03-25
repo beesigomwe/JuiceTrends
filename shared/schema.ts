@@ -98,6 +98,8 @@ export const posts = pgTable("posts", {
   publishResults: jsonb("publish_results").$type<Record<string, PlatformPublishResult>>(),
   // Platform-specific metadata: YouTube title/description, Pinterest boardId, etc. (§3.1)
   platformMetadata: jsonb("platform_metadata").$type<Record<string, Record<string, string>>>(),
+  // Optional brand this post belongs to
+  brandId: varchar("brand_id"),
 });
 
 export const insertPostSchema = createInsertSchema(posts).omit({
@@ -108,6 +110,9 @@ export const insertPostSchema = createInsertSchema(posts).omit({
   impressions: true,
   engagement: true,
   clicks: true,
+  // brandId is optional and set separately
+}).extend({
+  brandId: z.string().optional().nullable(),
 });
 
 export type InsertPost = z.infer<typeof insertPostSchema>;
@@ -142,6 +147,45 @@ export const postMedia = pgTable("post_media", {
 export const insertPostMediaSchema = createInsertSchema(postMedia).omit({ id: true });
 export type InsertPostMedia = z.infer<typeof insertPostMediaSchema>;
 export type PostMedia = typeof postMedia.$inferSelect;
+
+// ─── Brands ──────────────────────────────────────────────────────────────────
+// A brand is a named group of social accounts belonging to one user.
+// When composing a post, the user picks a brand and the drawer auto-selects
+// the brand's platforms and routes publishing to those specific accounts.
+export const brands = pgTable("brands", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color").default("#6366f1"),   // accent colour for the brand chip
+  logoUrl: text("logo_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertBrandSchema = createInsertSchema(brands).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertBrand = z.infer<typeof insertBrandSchema>;
+export type Brand = typeof brands.$inferSelect;
+
+// brandAccounts — which social accounts belong to each brand
+export const brandAccounts = pgTable(
+  "brand_accounts",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    brandId: varchar("brand_id").notNull(),
+    accountId: varchar("account_id").notNull(),
+  },
+  (t) => ({
+    brandAccountUniq: unique("brand_accounts_brand_account_key").on(t.brandId, t.accountId),
+  }),
+);
+
+export const insertBrandAccountSchema = createInsertSchema(brandAccounts).omit({ id: true });
+export type InsertBrandAccount = z.infer<typeof insertBrandAccountSchema>;
+export type BrandAccount = typeof brandAccounts.$inferSelect;
+
+// Convenience type returned by the API — brand with its member accounts
+export type BrandWithAccounts = Brand & { accounts: SocialAccount[] };
 
 // Analytics aggregates
 export const analyticsData = pgTable("analytics_data", {

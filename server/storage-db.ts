@@ -3,12 +3,18 @@ import {
   users,
   posts,
   socialAccounts,
+  brands,
+  brandAccounts,
   type User,
   type InsertUser,
   type Post,
   type InsertPost,
   type SocialAccount,
   type InsertSocialAccount,
+  type Brand,
+  type InsertBrand,
+  type BrandAccount,
+  type BrandWithAccounts,
   type DashboardStats,
   type ChartDataPoint,
 } from "@shared/schema";
@@ -200,5 +206,91 @@ export class DbStorage implements IStorage {
       });
     }
     return data;
+  }
+
+  // ─── Brands ────────────────────────────────────────────────────────────────
+
+  private async resolveBrandAccounts(brandId: string): Promise<SocialAccount[]> {
+    const bas = await this.db
+      .select()
+      .from(brandAccounts)
+      .where(eq(brandAccounts.brandId, brandId));
+    if (bas.length === 0) return [];
+    const accountRows = await Promise.all(
+      bas.map((ba) =>
+        this.db.select().from(socialAccounts).where(eq(socialAccounts.id, ba.accountId)).limit(1)
+      )
+    );
+    return accountRows
+      .flat()
+      .filter((a): a is SocialAccount => a !== undefined)
+      .map(decryptAccount);
+  }
+
+  async getBrands(userId: string): Promise<BrandWithAccounts[]> {
+    const rows = await this.db
+      .select()
+      .from(brands)
+      .where(eq(brands.userId, userId))
+      .orderBy(desc(brands.createdAt));
+    return Promise.all(
+      (rows as Brand[]).map(async (b) => ({ ...b, accounts: await this.resolveBrandAccounts(b.id) }))
+    );
+  }
+
+  async getBrand(id: string): Promise<BrandWithAccounts | undefined> {
+    const rows = await this.db.select().from(brands).where(eq(brands.id, id)).limit(1);
+    const brand = rows[0] as Brand | undefined;
+    if (!brand) return undefined;
+    return { ...brand, accounts: await this.resolveBrandAccounts(id) };
+  }
+
+  async createBrand(insertBrand: InsertBrand): Promise<Brand> {
+    const rows = await this.db
+      .insert(brands)
+      .values(insertBrand as typeof brands.$inferInsert)
+      .returning();
+    const brand = rows[0];
+    if (!brand) throw new Error("Insert brand failed");
+    return brand as Brand;
+  }
+
+  async updateBrand(id: string, updates: Partial<InsertBrand>): Promise<Brand | undefined> {
+    const rows = await this.db
+      .update(brands)
+      .set({ ...updates, updatedAt: new Date() } as Partial<typeof brands.$inferInsert>)
+      .where(eq(brands.id, id))
+      .returning();
+    return rows[0] as Brand | undefined;
+  }
+
+  async deleteBrand(id: string): Promise<boolean> {
+    // cascade: remove brand_accounts first
+    await this.db.delete(brandAccounts).where(eq(brandAccounts.brandId, id));
+    const result = await this.db.delete(brands).where(eq(brands.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async addAccountToBrand(brandId: string, accountId: string): Promise<BrandAccount> {
+    // upsert via ON CONFLICT DO NOTHING then re-fetch
+    await this.db
+      .insert(brandAccounts)
+      .values({ brandId, accountId } as typeof brandAccounts.$inferInsert)
+      .onConflictDoNothing();
+    const rows = await this.db
+      .select()
+      .from(brandAccounts)
+      .where(eq(brandAccounts.brandId, brandId))
+      .limit(100);
+    const match = (rows as BrandAccount[]).find((ba) => ba.accountId === accountId);
+    if (!match) throw new Error("addAccountToBrand: could not find inserted row");
+    return match;
+  }
+
+  async removeAccountFromBrand(brandId: string, accountId: string): Promise<boolean> {
+    const result = await this.db
+      .delete(brandAccounts)
+      .where(eq(brandAccounts.brandId, brandId));
+    return (result.rowCount ?? 0) > 0;
   }
 }

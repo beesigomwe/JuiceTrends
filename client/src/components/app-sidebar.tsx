@@ -8,6 +8,7 @@ import {
   Settings,
   Zap,
   LogOut,
+  Layers,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,6 +32,7 @@ const mainMenuItems = [
   { title: "Posts", url: "/posts", icon: FileText },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Accounts", url: "/accounts", icon: Users },
+  { title: "Brands", url: "/brands", icon: Layers },
 ];
 
 const settingsItems = [
