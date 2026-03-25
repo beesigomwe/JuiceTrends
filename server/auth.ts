@@ -4,6 +4,7 @@ import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import bcrypt from "bcrypt";
 import { storage } from "./storage";
+import connectPgSimple from "connect-pg-simple";
 
 const SALT_ROUNDS = 10;
 
@@ -24,8 +25,20 @@ function getSessionSecret(): string {
 }
 
 export function setupAuth(app: Express) {
+  // Use PostgreSQL session store in production when DATABASE_URL is available
+  const PgSession = connectPgSimple(session);
+  const sessionStore =
+    process.env.NODE_ENV === "production" && process.env.DATABASE_URL
+      ? new PgSession({
+          conString: process.env.DATABASE_URL,
+          tableName: "session",
+          createTableIfMissing: true,
+        })
+      : undefined;
+
   app.use(
     session({
+      store: sessionStore,
       secret: getSessionSecret(),
       resave: false,
       saveUninitialized: false,

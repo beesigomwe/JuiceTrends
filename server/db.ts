@@ -7,7 +7,14 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export function getDb(): { pool: Pool; db: ReturnType<typeof drizzle> } | null {
   if (!process.env.DATABASE_URL) return null;
   if (!_pool) {
-    _pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    _pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      // Railway PostgreSQL requires SSL in production
+      ssl:
+        process.env.NODE_ENV === "production"
+          ? { rejectUnauthorized: false }
+          : false,
+    });
     _db = drizzle(_pool);
   }
   return { pool: _pool, db: _db! };

@@ -30,6 +30,11 @@ export async function registerRoutes(
   setupAiGenerate(app);
   setupBrandsRoutes(app);
 
+  // Health check endpoint for Railway
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // Social platform OAuth flows
   setupTwitterOAuth(app);
   setupFacebookOAuth(app);
