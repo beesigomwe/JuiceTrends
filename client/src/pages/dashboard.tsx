@@ -15,6 +15,10 @@ import {
   Plus,
   TrendingUp,
   ArrowRight,
+  Sparkles,
+  Lightbulb,
+  Repeat2,
+  MessageCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import {
@@ -28,7 +32,7 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import type { DashboardStats, ChartDataPoint, Post, SocialAccount } from "@shared/schema";
+import type { DashboardStats, ChartDataPoint, Post, SocialAccount, SuggestedPost } from "@shared/schema";
 
 export default function Dashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -334,11 +338,98 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* AI Suggestions Widget */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-violet-500" />
+            <CardTitle className="text-lg font-semibold">AI Suggestions</CardTitle>
+          </div>
+          <Link href="/suggestions">
+            <Button variant="ghost" size="sm" data-testid="link-view-suggestions">
+              View All
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
+          </Link>
+        </CardHeader>
+        <CardContent>
+          <SuggestionsDashboardWidget />
+        </CardContent>
+      </Card>
+
       <PostCreationDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         onSubmit={handleCreatePost}
       />
+    </div>
+  );
+}
+
+function SuggestionsDashboardWidget() {
+  const { data: suggestions = [], isLoading } = useQuery<SuggestedPost[]>({
+    queryKey: ["/api/suggestions"],
+    queryFn: () => fetch("/api/suggestions").then((r) => r.json()),
+  });
+
+  const pending = suggestions.filter((s) => s.status === "pending").slice(0, 3);
+
+  const TYPE_ICON: Record<string, React.ReactNode> = {
+    new_post: <Lightbulb className="w-4 h-4 text-violet-500" />,
+    follow_up: <Repeat2 className="w-4 h-4 text-blue-500" />,
+    comment_reply: <MessageCircle className="w-4 h-4 text-emerald-500" />,
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="flex gap-3 p-3 rounded-lg border">
+            <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+            <div className="flex-1">
+              <Skeleton className="h-4 w-full mb-1.5" />
+              <Skeleton className="h-3 w-2/3" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (pending.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <Sparkles className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
+        <p className="text-sm text-muted-foreground">No suggestions yet</p>
+        <Link href="/suggestions">
+          <Button variant="outline" size="sm" className="mt-3 gap-1">
+            <Sparkles className="w-3.5 h-3.5" />
+            Generate Suggestions
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {pending.map((s) => (
+        <div key={s.id} className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/40 transition-colors">
+          <div className="mt-0.5 shrink-0">{TYPE_ICON[s.type] ?? TYPE_ICON.new_post}</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm line-clamp-2">{s.content}</p>
+            {s.suggestedTime && (
+              <p className="text-xs text-muted-foreground mt-1">Best time: {s.suggestedTime}</p>
+            )}
+          </div>
+        </div>
+      ))}
+      <Link href="/suggestions">
+        <Button variant="ghost" size="sm" className="w-full mt-1 gap-1 text-muted-foreground">
+          See all suggestions
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Button>
+      </Link>
     </div>
   );
 }

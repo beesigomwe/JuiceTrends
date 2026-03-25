@@ -12,6 +12,9 @@ import {
   type BrandWithAccounts,
   type DashboardStats,
   type ChartDataPoint,
+  type SuggestedPost,
+  type InsertSuggestedPost,
+  type SuggestionStatus,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -46,6 +49,14 @@ export interface IStorage {
   deleteBrand(id: string): Promise<boolean>;
   addAccountToBrand(brandId: string, accountId: string): Promise<BrandAccount>;
   removeAccountFromBrand(brandId: string, accountId: string): Promise<boolean>;
+
+  // Suggestion Engine
+  getSuggestions(userId: string, status?: string): Promise<SuggestedPost[]>;
+  getSuggestion(id: string, userId: string): Promise<SuggestedPost | undefined>;
+  createSuggestedPost(suggestion: InsertSuggestedPost): Promise<SuggestedPost>;
+  updateSuggestion(id: string, userId: string, update: Partial<Pick<SuggestedPost, 'status' | 'scheduledPostId'>>): Promise<SuggestedPost | undefined>;
+  deleteSuggestion(id: string, userId: string): Promise<boolean>;
+  deletePendingSuggestions(userId: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -54,6 +65,7 @@ export class MemStorage implements IStorage {
   private accounts: Map<string, SocialAccount>;
   private brands: Map<string, Brand>;
   private brandAccounts: Map<string, BrandAccount>;
+  private suggestedPosts: Map<string, SuggestedPost>;
 
   constructor() {
     this.users = new Map();
@@ -61,6 +73,7 @@ export class MemStorage implements IStorage {
     this.accounts = new Map();
     this.brands = new Map();
     this.brandAccounts = new Map();
+    this.suggestedPosts = new Map();
 
     this.seedData();
   }
@@ -604,6 +617,72 @@ export class MemStorage implements IStorage {
       }
     }
     return false;
+  }
+
+  // ── Suggestion Engine ──────────────────────────────────────────────────────
+
+  async getSuggestions(userId: string, status?: string): Promise<SuggestedPost[]> {
+    return Array.from(this.suggestedPosts.values())
+      .filter((s) => s.userId === userId && (!status || s.status === status))
+      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+  }
+
+  async getSuggestion(id: string, userId: string): Promise<SuggestedPost | undefined> {
+    const s = this.suggestedPosts.get(id);
+    return s && s.userId === userId ? s : undefined;
+  }
+
+  async createSuggestedPost(suggestion: InsertSuggestedPost): Promise<SuggestedPost> {
+    const id = randomUUID();
+    const now = new Date();
+    const validTypes = ["new_post", "follow_up", "comment_reply"] as const;
+    const s: SuggestedPost = {
+      id,
+      ...suggestion,
+      type: (validTypes.includes(suggestion.type as any) ? suggestion.type : "new_post") as "new_post" | "follow_up" | "comment_reply",
+      platforms: suggestion.platforms as any,
+      status: (suggestion.status ?? "pending") as "pending" | "accepted" | "dismissed" | "scheduled",
+      sourcePostId: suggestion.sourcePostId ?? null,
+      hashtags: suggestion.hashtags ?? null,
+      reasoning: suggestion.reasoning ?? null,
+      suggestedTime: suggestion.suggestedTime ?? null,
+      suggestedDayOfWeek: suggestion.suggestedDayOfWeek ?? null,
+      suggestedHour: suggestion.suggestedHour ?? null,
+      confidenceScore: suggestion.confidenceScore ?? 70,
+      engagementPrediction: suggestion.engagementPrediction ?? null,
+      scheduledPostId: suggestion.scheduledPostId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.suggestedPosts.set(id, s);
+    return s;
+  }
+
+  async updateSuggestion(
+    id: string,
+    userId: string,
+    update: Partial<Pick<SuggestedPost, 'status' | 'scheduledPostId'>>
+  ): Promise<SuggestedPost | undefined> {
+    const s = this.suggestedPosts.get(id);
+    if (!s || s.userId !== userId) return undefined;
+    const updated: SuggestedPost = { ...s, ...update, updatedAt: new Date() };
+    this.suggestedPosts.set(id, updated);
+    return updated;
+  }
+
+  async deleteSuggestion(id: string, userId: string): Promise<boolean> {
+    const s = this.suggestedPosts.get(id);
+    if (!s || s.userId !== userId) return false;
+    this.suggestedPosts.delete(id);
+    return true;
+  }
+
+  async deletePendingSuggestions(userId: string): Promise<void> {
+    for (const [id, s] of Array.from(this.suggestedPosts.entries())) {
+      if (s.userId === userId && s.status === 'pending') {
+        this.suggestedPosts.delete(id);
+      }
+    }
   }
 }
 

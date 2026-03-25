@@ -230,3 +230,70 @@ export type ChartDataPoint = {
 export type CalendarPost = Post & {
   platformIcons: PlatformType[];
 };
+
+// ─── Suggestion Engine ────────────────────────────────────────────────────────
+// Stores AI-generated post suggestions, follow-up threads, and best-time advice.
+
+export const suggestionTypes = ["new_post", "follow_up", "comment_reply"] as const;
+export type SuggestionType = typeof suggestionTypes[number];
+
+export const suggestionStatuses = ["pending", "accepted", "dismissed", "scheduled"] as const;
+export type SuggestionStatus = typeof suggestionStatuses[number];
+
+export const suggestedPosts = pgTable("suggested_posts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  // Type of suggestion
+  type: text("type").notNull().$type<SuggestionType>().default("new_post"),
+  // The source post this suggestion continues (null for brand-new post ideas)
+  sourcePostId: varchar("source_post_id"),
+  // AI-generated content
+  content: text("content").notNull(),
+  // Platform targets
+  platforms: text("platforms").array().notNull().$type<PlatformType[]>(),
+  // Suggested hashtags
+  hashtags: text("hashtags").array(),
+  // AI reasoning / why this post is suggested
+  reasoning: text("reasoning"),
+  // Best time to post (ISO string, e.g. "Tuesday 10:00 AM")
+  suggestedTime: text("suggested_time"),
+  // Day-of-week + hour recommendation (0-6, 0-23)
+  suggestedDayOfWeek: integer("suggested_day_of_week"),
+  suggestedHour: integer("suggested_hour"),
+  // Confidence score 0-100
+  confidenceScore: integer("confidence_score").default(70),
+  // Engagement prediction label
+  engagementPrediction: text("engagement_prediction"),
+  // Status lifecycle
+  status: text("status").notNull().$type<SuggestionStatus>().default("pending"),
+  // If scheduled, the resulting post id
+  scheduledPostId: varchar("scheduled_post_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSuggestedPostSchema = createInsertSchema(suggestedPosts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertSuggestedPost = z.infer<typeof insertSuggestedPostSchema>;
+export type SuggestedPost = typeof suggestedPosts.$inferSelect;
+
+// Best-time window returned by the engine (not persisted, computed on the fly)
+export type BestTimeWindow = {
+  platform: PlatformType;
+  dayOfWeek: number;        // 0 = Sunday
+  hour: number;             // 0-23
+  label: string;            // e.g. "Tuesday 10:00 AM"
+  avgEngagement: number;
+  sampleSize: number;
+};
+
+// Full suggestion run result returned by POST /api/suggestions/generate
+export type SuggestionRunResult = {
+  suggestions: SuggestedPost[];
+  bestTimes: BestTimeWindow[];
+  analysedPosts: number;
+  generatedAt: string;
+};

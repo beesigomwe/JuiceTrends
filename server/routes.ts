@@ -8,6 +8,7 @@ import { publishPostToPlatform, type PublishResult } from "./publisher";
 import { setupMediaUpload } from "./media-upload";
 import { setupAiGenerate } from "./ai-generate";
 import { setupBrandsRoutes } from "./brands-routes";
+import { setupSuggestionsRoutes } from "./suggestions-routes";
 import passport from "passport";
 import {
   setupFacebookOAuth,
@@ -29,6 +30,7 @@ export async function registerRoutes(
   setupMediaUpload(app);
   setupAiGenerate(app);
   setupBrandsRoutes(app);
+  setupSuggestionsRoutes(app);
 
   // Health check endpoint for Railway
   app.get("/api/health", (_req, res) => {

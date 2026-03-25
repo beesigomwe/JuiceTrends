@@ -1,10 +1,11 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import {
   users,
   posts,
   socialAccounts,
   brands,
   brandAccounts,
+  suggestedPosts,
   type User,
   type InsertUser,
   type Post,
@@ -17,6 +18,8 @@ import {
   type BrandWithAccounts,
   type DashboardStats,
   type ChartDataPoint,
+  type SuggestedPost,
+  type InsertSuggestedPost,
 } from "@shared/schema";
 import type { IStorage } from "./storage";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -292,5 +295,60 @@ export class DbStorage implements IStorage {
       .delete(brandAccounts)
       .where(eq(brandAccounts.brandId, brandId));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // ── Suggestion Engine ──────────────────────────────────────────────────────
+
+  async getSuggestions(userId: string, status?: string): Promise<SuggestedPost[]> {
+    const rows = await this.db
+      .select()
+      .from(suggestedPosts)
+      .where(eq(suggestedPosts.userId, userId))
+      .orderBy(desc(suggestedPosts.createdAt));
+    return status ? rows.filter((r) => r.status === status) : rows;
+  }
+
+  async getSuggestion(id: string, userId: string): Promise<SuggestedPost | undefined> {
+    const rows = await this.db
+      .select()
+      .from(suggestedPosts)
+      .where(and(eq(suggestedPosts.id, id), eq(suggestedPosts.userId, userId)))
+      .limit(1);
+    return rows[0];
+  }
+
+  async createSuggestedPost(suggestion: InsertSuggestedPost): Promise<SuggestedPost> {
+    const rows = await this.db
+      .insert(suggestedPosts)
+      .values(suggestion as any)
+      .returning();
+    if (!rows[0]) throw new Error("createSuggestedPost: no row returned");
+    return rows[0];
+  }
+
+  async updateSuggestion(
+    id: string,
+    userId: string,
+    update: Partial<Pick<SuggestedPost, 'status' | 'scheduledPostId'>>
+  ): Promise<SuggestedPost | undefined> {
+    const rows = await this.db
+      .update(suggestedPosts)
+      .set({ ...update, updatedAt: new Date() })
+      .where(and(eq(suggestedPosts.id, id), eq(suggestedPosts.userId, userId)))
+      .returning();
+    return rows[0];
+  }
+
+  async deleteSuggestion(id: string, userId: string): Promise<boolean> {
+    const result = await this.db
+      .delete(suggestedPosts)
+      .where(and(eq(suggestedPosts.id, id), eq(suggestedPosts.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async deletePendingSuggestions(userId: string): Promise<void> {
+    await this.db
+      .delete(suggestedPosts)
+      .where(and(eq(suggestedPosts.userId, userId), eq(suggestedPosts.status, 'pending')));
   }
 }

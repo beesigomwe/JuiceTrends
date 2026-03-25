@@ -9,6 +9,7 @@ import {
   Zap,
   LogOut,
   Layers,
+  Sparkles,
 } from "lucide-react";
 import {
   Sidebar,
@@ -33,6 +34,7 @@ const mainMenuItems = [
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Accounts", url: "/accounts", icon: Users },
   { title: "Brands", url: "/brands", icon: Layers },
+  { title: "Suggestions", url: "/suggestions", icon: Sparkles },
 ];
 
 const settingsItems = [

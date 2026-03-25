@@ -116,6 +116,26 @@ const TARGET_SCHEMA: Record<
     { name: "brand_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
     { name: "account_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
   ],
+  // Suggestion Engine — AI-generated post suggestions and follow-up threads
+  suggested_posts: [
+    { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },
+    { name: "user_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
+    { name: "type", createDef: "TEXT NOT NULL DEFAULT 'new_post'", addDef: "TEXT NOT NULL DEFAULT 'new_post'" },
+    { name: "source_post_id", createDef: "VARCHAR", addDef: "VARCHAR" },
+    { name: "content", createDef: "TEXT NOT NULL", addDef: "TEXT NOT NULL" },
+    { name: "platforms", createDef: "TEXT[] NOT NULL", addDef: "TEXT[] NOT NULL" },
+    { name: "hashtags", createDef: "TEXT[]", addDef: "TEXT[]" },
+    { name: "reasoning", createDef: "TEXT", addDef: "TEXT" },
+    { name: "suggested_time", createDef: "TEXT", addDef: "TEXT" },
+    { name: "suggested_day_of_week", createDef: "INTEGER", addDef: "INTEGER" },
+    { name: "suggested_hour", createDef: "INTEGER", addDef: "INTEGER" },
+    { name: "confidence_score", createDef: "INTEGER DEFAULT 70", addDef: "INTEGER DEFAULT 70" },
+    { name: "engagement_prediction", createDef: "TEXT", addDef: "TEXT" },
+    { name: "status", createDef: "TEXT NOT NULL DEFAULT 'pending'", addDef: "TEXT NOT NULL DEFAULT 'pending'" },
+    { name: "scheduled_post_id", createDef: "VARCHAR", addDef: "VARCHAR" },
+    { name: "created_at", createDef: "TIMESTAMP DEFAULT NOW()", addDef: "TIMESTAMP DEFAULT NOW()" },
+    { name: "updated_at", createDef: "TIMESTAMP DEFAULT NOW()", addDef: "TIMESTAMP DEFAULT NOW()" },
+  ],
 };
 
 const MIGRATIONS_META_TABLE = "_schema_migrations";
