@@ -1,9 +1,12 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPostSchema, insertSocialAccountSchema } from "@shared/schema";
+import { insertPostSchema, insertSocialAccountSchema, type PlatformType } from "@shared/schema";
 import { hashPassword, requireAuth, setupAuth } from "./auth";
 import { fetchAccountStats } from "./account-stats";
+import { publishPostToPlatform, type PublishResult } from "./publisher";
+import { setupMediaUpload } from "./media-upload";
+import { setupAiGenerate } from "./ai-generate";
 import passport from "passport";
 import {
   setupFacebookOAuth,
@@ -13,6 +16,7 @@ import {
   setupTikTokOAuth,
   setupTwitterOAuth,
   setupYouTubeOAuth,
+  setupThreadsOAuth,
 } from "./oauth";
 
 export async function registerRoutes(
@@ -21,6 +25,8 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   setupAuth(app);
+  setupMediaUpload(app);
+  setupAiGenerate(app);
 
   // Social platform OAuth flows
   setupTwitterOAuth(app);
@@ -30,6 +36,7 @@ export async function registerRoutes(
   setupTikTokOAuth(app);
   setupPinterestOAuth(app);
   setupYouTubeOAuth(app);
+  setupThreadsOAuth(app);
 
   app.post("/api/auth/signup", async (req, res) => {
     try {
@@ -180,7 +187,7 @@ export async function registerRoutes(
       const partialSchema = insertPostSchema.partial();
       const validatedData = partialSchema.parse(req.body);
       
-      const post = await storage.updatePost(req.params.id, validatedData);
+      const post = await storage.updatePost(req.params.id, validatedData as any);
       res.json(post);
     } catch (error: any) {
       if (error.name === "ZodError") {
@@ -279,6 +286,52 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete account" });
+    }
+  });
+
+  // §1.4 — Publish Now: immediately publish a draft or scheduled post
+  app.post("/api/posts/:id/publish", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = (req.user as any)?.id as string | undefined;
+      const post = await storage.getPost(req.params.id);
+      if (!post) return res.status(404).json({ error: "Post not found" });
+      if (post.userId !== userId) return res.status(403).json({ error: "Forbidden" });
+
+      if (post.status === "published") {
+        return res.status(409).json({ error: "Post is already published" });
+      }
+
+      const userAccounts = await storage.getAccounts(userId);
+      const platforms = (post.platforms ?? []) as PlatformType[];
+      const results: Record<string, PublishResult> = {};
+
+      for (const platform of platforms) {
+        const account = userAccounts.find(
+          (a) => a.platform === platform && a.isConnected
+        );
+        if (!account) {
+          results[platform] = {
+            success: false,
+            error: `No connected ${platform} account found.`,
+          };
+          continue;
+        }
+        results[platform] = await publishPostToPlatform(post, account);
+      }
+
+      const anySuccess = Object.values(results).some((r) => r.success);
+      const allFailed = Object.values(results).every((r) => !r.success);
+      const now = new Date();
+
+      const updated = await storage.updatePost(post.id, {
+        status: allFailed ? "failed" : "published",
+        ...(anySuccess ? { publishedAt: now } : {}),
+        publishResults: results,
+      } as any);
+
+      return res.json({ post: updated, results });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to publish post" });
     }
   });
 

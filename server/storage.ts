@@ -19,7 +19,7 @@ export interface IStorage {
   getPosts(userId?: string): Promise<Post[]>;
   getPost(id: string): Promise<Post | undefined>;
   createPost(post: InsertPost): Promise<Post>;
-  updatePost(id: string, post: Partial<InsertPost>): Promise<Post | undefined>;
+  updatePost(id: string, post: Partial<InsertPost> & { publishedAt?: Date | null; publishResults?: Record<string, any>; platformMetadata?: Record<string, any> }): Promise<Post | undefined>;
   deletePost(id: string): Promise<boolean>;
   getRecentPosts(userId?: string, limit?: number): Promise<Post[]>;
 
@@ -142,6 +142,8 @@ export class MemStorage implements IStorage {
         impressions: 18200,
         engagement: 892,
         clicks: 234,
+        publishResults: null,
+        platformMetadata: null,
       },
       {
         id: randomUUID(),
@@ -158,6 +160,8 @@ export class MemStorage implements IStorage {
         impressions: 14500,
         engagement: 567,
         clicks: 145,
+        publishResults: null,
+        platformMetadata: null,
       },
       {
         id: randomUUID(),
@@ -174,6 +178,8 @@ export class MemStorage implements IStorage {
         impressions: 0,
         engagement: 0,
         clicks: 0,
+        publishResults: null,
+        platformMetadata: null,
       },
       {
         id: randomUUID(),
@@ -190,6 +196,8 @@ export class MemStorage implements IStorage {
         impressions: 0,
         engagement: 0,
         clicks: 0,
+        publishResults: null,
+        platformMetadata: null,
       },
       {
         id: randomUUID(),
@@ -206,6 +214,8 @@ export class MemStorage implements IStorage {
         impressions: 0,
         engagement: 0,
         clicks: 0,
+        publishResults: null,
+        platformMetadata: null,
       },
       {
         id: randomUUID(),
@@ -222,6 +232,8 @@ export class MemStorage implements IStorage {
         impressions: 0,
         engagement: 0,
         clicks: 0,
+        publishResults: null,
+        platformMetadata: null,
       },
     ];
 
@@ -289,12 +301,14 @@ export class MemStorage implements IStorage {
       impressions: 0,
       engagement: 0,
       clicks: 0,
+      publishResults: null,
+      platformMetadata: null,
     };
     this.posts.set(id, post);
     return post;
   }
 
-  async updatePost(id: string, updates: Partial<InsertPost>): Promise<Post | undefined> {
+  async updatePost(id: string, updates: Partial<InsertPost> & { publishedAt?: Date | null; publishResults?: Record<string, any>; platformMetadata?: Record<string, any> }): Promise<Post | undefined> {
     const post = this.posts.get(id);
     if (!post) return undefined;
 
@@ -313,6 +327,9 @@ export class MemStorage implements IStorage {
       scheduledAt:
         updates.scheduledAt !== undefined ? updates.scheduledAt : post.scheduledAt,
       hashtags: updates.hashtags !== undefined ? updates.hashtags : post.hashtags,
+      publishedAt: (updates as any).publishedAt !== undefined ? (updates as any).publishedAt : post.publishedAt,
+      publishResults: (updates as any).publishResults !== undefined ? (updates as any).publishResults : (post as any).publishResults,
+      platformMetadata: (updates as any).platformMetadata !== undefined ? (updates as any).platformMetadata : (post as any).platformMetadata,
     };
     this.posts.set(id, updated);
     return updated;

@@ -85,7 +85,7 @@ export class DbStorage implements IStorage {
     return post as Post;
   }
 
-  async updatePost(id: string, updates: Partial<InsertPost>): Promise<Post | undefined> {
+  async updatePost(id: string, updates: Partial<InsertPost> & { publishedAt?: Date | null; publishResults?: Record<string, any>; platformMetadata?: Record<string, any> }): Promise<Post | undefined> {
     const rows = await this.db.update(posts).set(updates as Partial<typeof posts.$inferInsert>).where(eq(posts.id, id)).returning();
     return rows[0] as Post | undefined;
   }

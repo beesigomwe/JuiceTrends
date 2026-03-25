@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
+import { Progress } from "@/components/ui/progress";
 import {
   Popover,
   PopoverContent,
@@ -35,23 +36,62 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PlatformIcon, getPlatformName } from "./platform-icon";
-import { Sparkles, CalendarIcon, Clock, ImagePlus } from "lucide-react";
+import { Sparkles, CalendarIcon, Clock, ImagePlus, X, AlertTriangle, Send } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import type { PlatformType, Post, platformTypes } from "@shared/schema";
+import type { PlatformType, Post } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
 
-const validPlatforms = ["facebook", "instagram", "twitter", "linkedin", "tiktok", "pinterest", "youtube"] as const;
+// ---------------------------------------------------------------------------
+// Per-platform character limits (§4.3)
+// ---------------------------------------------------------------------------
+const PLATFORM_CHAR_LIMITS: Record<PlatformType, number> = {
+  twitter: 280,
+  threads: 500,
+  pinterest: 500,
+  instagram: 2200,
+  tiktok: 2200,
+  linkedin: 3000,
+  facebook: 63206,
+  youtube: 5000,
+};
+
+// Platforms that require media
+const REQUIRES_IMAGE: PlatformType[] = ["instagram", "pinterest"];
+const REQUIRES_VIDEO: PlatformType[] = ["tiktok", "youtube"];
+
+const validPlatforms = [
+  "facebook",
+  "instagram",
+  "twitter",
+  "linkedin",
+  "tiktok",
+  "pinterest",
+  "youtube",
+  "threads",
+] as const;
 
 const postFormSchema = z.object({
-  content: z.string().min(1, "Content is required").max(2200, "Content too long"),
+  content: z.string().min(1, "Content is required"),
   platforms: z.array(z.enum(validPlatforms)).min(1, "Select at least one platform"),
   hashtags: z.string().optional(),
   scheduledDate: z.date().optional(),
   scheduledTime: z.string().optional(),
+  aiTopic: z.string().optional(),
+  aiTone: z.enum(["professional", "casual", "humorous", "promotional"]).optional(),
 });
 
 type PostFormValues = z.infer<typeof postFormSchema>;
+
+interface UploadedMedia {
+  url: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  localPreview?: string;
+}
 
 interface PostCreationDrawerProps {
   open: boolean;
@@ -62,7 +102,9 @@ interface PostCreationDrawerProps {
     hashtags: string[];
     scheduledAt: Date | null;
     status: "draft" | "scheduled";
+    mediaUrls?: string[];
   }) => void;
+  onPublishNow?: (postId: string) => void;
   editPost?: Post | null;
   isLoading?: boolean;
 }
@@ -73,16 +115,25 @@ const availablePlatforms: PlatformType[] = [
   "twitter",
   "linkedin",
   "tiktok",
+  "pinterest",
+  "youtube",
+  "threads",
 ];
 
 export function PostCreationDrawer({
   open,
   onOpenChange,
   onSubmit,
+  onPublishNow,
   editPost,
   isLoading,
 }: PostCreationDrawerProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const form = useForm<PostFormValues>({
     resolver: zodResolver(postFormSchema),
@@ -94,12 +145,13 @@ export function PostCreationDrawer({
       scheduledTime: editPost?.scheduledAt
         ? format(new Date(editPost.scheduledAt), "HH:mm")
         : "",
+      aiTone: "professional",
     },
   });
 
   const handleSubmit = (values: PostFormValues, asDraft: boolean = false) => {
     let scheduledAt: Date | null = null;
-    
+
     if (values.scheduledDate && values.scheduledTime && !asDraft) {
       const [hours, minutes] = values.scheduledTime.split(":").map(Number);
       scheduledAt = new Date(values.scheduledDate);
@@ -119,28 +171,130 @@ export function PostCreationDrawer({
       hashtags: normalizedHashtags,
       scheduledAt,
       status: asDraft ? "draft" : "scheduled",
+      mediaUrls: uploadedMedia.map((m) => m.url),
     });
   };
 
+  // ---------------------------------------------------------------------------
+  // AI content generation (§5.1)
+  // ---------------------------------------------------------------------------
   const generateWithAI = async () => {
     setIsGenerating(true);
-    setTimeout(() => {
-      const suggestions = [
-        "Exciting news! We're thrilled to announce our latest product update that's going to revolutionize how you work. Stay tuned for more details!",
-        "Behind every great product is an incredible team. Today we celebrate our amazing people who make the magic happen every day.",
-        "Your feedback drives our innovation. Thank you to our community for helping us build something truly special.",
-      ];
-      form.setValue("content", suggestions[Math.floor(Math.random() * suggestions.length)]);
+    try {
+      const topic = form.getValues("aiTopic") || "our brand";
+      const tone = form.getValues("aiTone") || "professional";
+      const platforms = form.getValues("platforms");
+
+      const res = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ topic, tone, platforms }),
+      });
+
+      if (!res.ok) throw new Error("AI generation failed");
+      const data = await res.json() as { content: string; hashtags?: string };
+      form.setValue("content", data.content);
+      if (data.hashtags) {
+        form.setValue("hashtags", data.hashtags);
+      }
+    } catch {
+      toast({ title: "AI generation failed", description: "Please try again.", variant: "destructive" });
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Media upload (§2.2)
+  // ---------------------------------------------------------------------------
+  const handleFileChange = useCallback(
+    async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+
+      for (const file of Array.from(files)) {
+        setIsUploading(true);
+        setUploadProgress(0);
+
+        // Local preview
+        const localPreview = URL.createObjectURL(file);
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        await new Promise<void>((resolve) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", "/api/media/upload");
+          xhr.withCredentials = true;
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              setUploadProgress(Math.round((e.loaded / e.total) * 100));
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status === 201) {
+              const data = JSON.parse(xhr.responseText) as UploadedMedia;
+              setUploadedMedia((prev) => [...prev, { ...data, localPreview }]);
+            } else {
+              toast({
+                title: "Upload failed",
+                description: `${file.name}: ${xhr.statusText}`,
+                variant: "destructive",
+              });
+            }
+            setIsUploading(false);
+            setUploadProgress(0);
+            resolve();
+          };
+
+          xhr.onerror = () => {
+            toast({ title: "Upload error", description: file.name, variant: "destructive" });
+            setIsUploading(false);
+            setUploadProgress(0);
+            resolve();
+          };
+
+          xhr.send(formData);
+        });
+      }
+    },
+    [toast]
+  );
+
+  const removeMedia = (index: number) => {
+    setUploadedMedia((prev) => {
+      const item = prev[index];
+      if (item?.localPreview) URL.revokeObjectURL(item.localPreview);
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const characterCount = form.watch("content")?.length || 0;
   const selectedPlatforms = form.watch("platforms") || [];
 
+  // Per-platform character limit warnings
+  const charWarnings = selectedPlatforms
+    .filter((p) => characterCount > PLATFORM_CHAR_LIMITS[p])
+    .map((p) => `${getPlatformName(p)} (limit: ${PLATFORM_CHAR_LIMITS[p]})`);
+
+  // Media requirement warnings
+  const hasImage = uploadedMedia.some((m) => m.mimeType.startsWith("image/"));
+  const hasVideo = uploadedMedia.some((m) => m.mimeType.startsWith("video/"));
+  const mediaWarnings: string[] = [];
+  for (const p of selectedPlatforms) {
+    if (REQUIRES_IMAGE.includes(p) && !hasImage && !hasVideo) {
+      mediaWarnings.push(`${getPlatformName(p)} requires at least one image or video.`);
+    }
+    if (REQUIRES_VIDEO.includes(p) && !hasVideo) {
+      mediaWarnings.push(`${getPlatformName(p)} requires a video attachment.`);
+    }
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-[480px] overflow-y-auto">
+      <SheetContent className="w-full sm:max-w-[520px] overflow-y-auto">
         <SheetHeader className="mb-6">
           <SheetTitle data-testid="text-drawer-title">
             {editPost ? "Edit Post" : "Create New Post"}
@@ -152,6 +306,7 @@ export function PostCreationDrawer({
 
         <Form {...form}>
           <form className="space-y-6">
+            {/* Platform selector */}
             <FormField
               control={form.control}
               name="platforms"
@@ -195,6 +350,7 @@ export function PostCreationDrawer({
               )}
             />
 
+            {/* Content with AI assist */}
             <FormField
               control={form.control}
               name="content"
@@ -223,34 +379,164 @@ export function PostCreationDrawer({
                       data-testid="input-post-content"
                     />
                   </FormControl>
-                  <div className="flex justify-end">
-                    <span
-                      className={cn(
-                        "text-xs",
-                        characterCount > 2200 ? "text-red-500" : "text-muted-foreground"
-                      )}
-                    >
-                      {characterCount}/2200
-                    </span>
-                  </div>
+
+                  {/* Per-platform character counts */}
+                  {selectedPlatforms.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {selectedPlatforms.map((p) => {
+                        const limit = PLATFORM_CHAR_LIMITS[p];
+                        const over = characterCount > limit;
+                        return (
+                          <span
+                            key={p}
+                            className={cn(
+                              "text-xs px-1.5 py-0.5 rounded",
+                              over
+                                ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+                                : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            {getPlatformName(p)}: {characterCount}/{limit}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {charWarnings.length > 0 && (
+                    <Alert variant="destructive" className="mt-2 py-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription className="text-xs">
+                        Content exceeds limit for: {charWarnings.join(", ")}
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
             />
 
+            {/* AI topic and tone */}
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="aiTopic"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs">AI Topic</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. product launch" className="h-8 text-sm" {...field} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="aiTone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs">Tone</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="Tone" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="professional">Professional</SelectItem>
+                        <SelectItem value="casual">Casual</SelectItem>
+                        <SelectItem value="humorous">Humorous</SelectItem>
+                        <SelectItem value="promotional">Promotional</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {/* Media upload */}
             <div className="space-y-2">
               <Label>Media</Label>
-              <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime"
+                multiple
+                className="hidden"
+                onChange={(e) => handleFileChange(e.target.files)}
+              />
+
+              {/* Drop zone */}
+              <div
+                className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleFileChange(e.dataTransfer.files);
+                }}
+              >
                 <ImagePlus className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                 <p className="text-sm text-muted-foreground">
                   Drag and drop or click to upload
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  PNG, JPG, GIF, MP4 up to 100MB
+                  PNG, JPG, GIF, WebP up to 10 MB · MP4 up to 100 MB
                 </p>
               </div>
+
+              {/* Upload progress */}
+              {isUploading && (
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Uploading… {uploadProgress}%</p>
+                  <Progress value={uploadProgress} className="h-1.5" />
+                </div>
+              )}
+
+              {/* Thumbnails */}
+              {uploadedMedia.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {uploadedMedia.map((media, i) => (
+                    <div key={i} className="relative group">
+                      {media.mimeType.startsWith("image/") ? (
+                        <img
+                          src={media.localPreview ?? media.url}
+                          alt={media.filename}
+                          className="w-20 h-20 object-cover rounded-md border"
+                        />
+                      ) : (
+                        <video
+                          src={media.localPreview ?? media.url}
+                          className="w-20 h-20 object-cover rounded-md border"
+                          muted
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeMedia(i)}
+                        className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Media requirement warnings */}
+              {mediaWarnings.length > 0 && (
+                <Alert className="py-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    {mediaWarnings.join(" ")}
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
+            {/* Hashtags */}
             <FormField
               control={form.control}
               name="hashtags"
@@ -272,6 +558,7 @@ export function PostCreationDrawer({
               )}
             />
 
+            {/* Schedule date/time */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -340,7 +627,8 @@ export function PostCreationDrawer({
               />
             </div>
 
-            <div className="flex gap-3 pt-4 border-t">
+            {/* Action buttons */}
+            <div className="flex gap-2 pt-4 border-t flex-wrap">
               <Button
                 type="button"
                 variant="outline"
@@ -360,6 +648,19 @@ export function PostCreationDrawer({
               >
                 {isLoading ? "Scheduling..." : "Schedule Post"}
               </Button>
+              {editPost && onPublishNow && (
+                <Button
+                  type="button"
+                  variant="default"
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  onClick={() => onPublishNow(editPost.id)}
+                  disabled={isLoading || editPost.status === "published"}
+                  data-testid="button-publish-now"
+                >
+                  <Send className="h-4 w-4 mr-1" />
+                  Publish Now
+                </Button>
+              )}
             </div>
           </form>
         </Form>

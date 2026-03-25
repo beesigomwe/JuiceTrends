@@ -60,6 +60,10 @@ const TARGET_SCHEMA: Record<
     { name: "impressions", createDef: "INTEGER DEFAULT 0", addDef: "INTEGER DEFAULT 0" },
     { name: "engagement", createDef: "INTEGER DEFAULT 0", addDef: "INTEGER DEFAULT 0" },
     { name: "clicks", createDef: "INTEGER DEFAULT 0", addDef: "INTEGER DEFAULT 0" },
+    // §3.1 — per-platform publish outcomes
+    { name: "publish_results", createDef: "JSONB", addDef: "JSONB" },
+    // §3.1 — platform-specific metadata (YouTube title, Pinterest boardId, etc.)
+    { name: "platform_metadata", createDef: "JSONB", addDef: "JSONB" },
   ],
   analytics_data: [
     { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },
@@ -72,6 +76,26 @@ const TARGET_SCHEMA: Record<
     { name: "clicks", createDef: "INTEGER DEFAULT 0", addDef: "INTEGER DEFAULT 0" },
     { name: "followers", createDef: "INTEGER DEFAULT 0", addDef: "INTEGER DEFAULT 0" },
     { name: "new_followers", createDef: "INTEGER DEFAULT 0", addDef: "INTEGER DEFAULT 0" },
+  ],
+  // §3.1 — media table
+  media: [
+    { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },
+    { name: "user_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
+    { name: "filename", createDef: "TEXT NOT NULL", addDef: "TEXT NOT NULL" },
+    { name: "url", createDef: "TEXT NOT NULL", addDef: "TEXT NOT NULL" },
+    { name: "mime_type", createDef: "TEXT NOT NULL", addDef: "TEXT NOT NULL" },
+    { name: "size_bytes", createDef: "INTEGER NOT NULL", addDef: "INTEGER NOT NULL DEFAULT 0" },
+    { name: "width", createDef: "INTEGER", addDef: "INTEGER" },
+    { name: "height", createDef: "INTEGER", addDef: "INTEGER" },
+    { name: "duration_seconds", createDef: "INTEGER", addDef: "INTEGER" },
+    { name: "created_at", createDef: "TIMESTAMP DEFAULT NOW()", addDef: "TIMESTAMP DEFAULT NOW()" },
+  ],
+  // §3.1 — post_media join table
+  post_media: [
+    { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },
+    { name: "post_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
+    { name: "media_id", createDef: "VARCHAR NOT NULL", addDef: "VARCHAR NOT NULL" },
+    { name: "position", createDef: "INTEGER DEFAULT 0", addDef: "INTEGER DEFAULT 0" },
   ],
 };
 

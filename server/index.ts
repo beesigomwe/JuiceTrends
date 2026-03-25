@@ -16,6 +16,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { runTokenRefresh } from "./token-refresh";
+import { startScheduler } from "./scheduler";
 import { storage } from "./storage";
 
 const app = express();
@@ -113,6 +114,10 @@ app.use((req, res, next) => {
           log(`Token refresh failed: ${(err as Error).message}`, "token-refresh");
         });
       }, REFRESH_INTERVAL_MS);
+
+      // Start the post scheduler (checks every 60 seconds for due posts)
+      startScheduler(storage);
+      log("Post scheduler started", "scheduler");
     },
   );
 })();

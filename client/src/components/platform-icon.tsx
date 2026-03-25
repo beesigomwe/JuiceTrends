@@ -1,4 +1,4 @@
-import { SiFacebook, SiInstagram, SiLinkedin, SiTiktok, SiPinterest, SiYoutube } from "react-icons/si";
+import { SiFacebook, SiInstagram, SiLinkedin, SiTiktok, SiPinterest, SiYoutube, SiThreads } from "react-icons/si";
 import { Twitter } from "lucide-react";
 import type { PlatformType } from "@shared/schema";
 
@@ -15,11 +15,12 @@ const platformColors: Record<PlatformType, string> = {
   tiktok: "text-foreground",
   pinterest: "text-[#E60023]",
   youtube: "text-[#FF0000]",
+  threads: "text-foreground",
 };
 
 export function PlatformIcon({ platform, className = "h-4 w-4" }: PlatformIconProps) {
-  const colorClass = platformColors[platform];
-  
+  const colorClass = platformColors[platform] ?? "text-foreground";
+
   switch (platform) {
     case "facebook":
       return <SiFacebook className={`${className} ${colorClass}`} />;
@@ -35,6 +36,8 @@ export function PlatformIcon({ platform, className = "h-4 w-4" }: PlatformIconPr
       return <SiPinterest className={`${className} ${colorClass}`} />;
     case "youtube":
       return <SiYoutube className={`${className} ${colorClass}`} />;
+    case "threads":
+      return <SiThreads className={`${className} ${colorClass}`} />;
     default:
       return null;
   }
@@ -49,6 +52,7 @@ export function getPlatformName(platform: PlatformType): string {
     tiktok: "TikTok",
     pinterest: "Pinterest",
     youtube: "YouTube",
+    threads: "Threads",
   };
-  return names[platform];
+  return names[platform] ?? platform;
 }

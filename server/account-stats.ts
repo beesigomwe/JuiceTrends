@@ -124,6 +124,23 @@ export async function fetchAccountStats(
         return { followers: account.followers ?? 0, engagement: account.engagement ?? "0%" };
       }
     }
+    case "threads": {
+      try {
+        const res = await axios.get(
+          `https://graph.threads.net/v1.0/${account.platformUserId}`,
+          {
+            params: {
+              fields: "id,username,followers_count",
+              access_token: token,
+            },
+          },
+        );
+        const followers = res.data?.followers_count ?? account.followers ?? 0;
+        return { followers: Number(followers), engagement: account.engagement ?? "0%" };
+      } catch {
+        return { followers: account.followers ?? 0, engagement: account.engagement ?? "0%" };
+      }
+    }
     default:
       return {
         followers: account.followers ?? 0,

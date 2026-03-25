@@ -44,6 +44,7 @@ const availablePlatforms: { platform: PlatformType; description: string }[] = [
   { platform: "tiktok", description: "Connect your TikTok Business account" },
   { platform: "pinterest", description: "Connect your Pinterest account" },
   { platform: "youtube", description: "Connect your YouTube channel" },
+  { platform: "threads", description: "Connect your Threads account" },
 ];
 
 export default function AccountsPage() {

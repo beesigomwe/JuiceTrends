@@ -116,6 +116,38 @@ export async function refreshTikTokToken(
   }
 }
 
+export async function refreshThreadsToken(
+  account: SocialAccount,
+  storage: IStorage
+): Promise<boolean> {
+  if (!account.accessToken) return false;
+  try {
+    // Threads uses the th_refresh_token grant to refresh long-lived tokens
+    const res = await axios.get(
+      "https://graph.threads.net/refresh_access_token",
+      {
+        params: {
+          grant_type: "th_refresh_token",
+          access_token: account.accessToken,
+        },
+      }
+    );
+    const { access_token, expires_in } = res.data;
+    const tokenExpiresAt =
+      typeof expires_in === "number"
+        ? new Date(Date.now() + expires_in * 1000)
+        : null;
+    await storage.updateAccount(account.id, {
+      accessToken: access_token,
+      tokenExpiresAt,
+      isConnected: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function runTokenRefresh(storage: IStorage): Promise<void> {
   const accounts = await storage.getAccounts();
   for (const account of accounts) {
@@ -132,6 +164,9 @@ export async function runTokenRefresh(storage: IStorage): Promise<void> {
         break;
       case "tiktok":
         ok = await refreshTikTokToken(account, storage);
+        break;
+      case "threads":
+        ok = await refreshThreadsToken(account, storage);
         break;
       case "facebook":
       case "instagram":

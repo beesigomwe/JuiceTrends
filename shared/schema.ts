@@ -26,8 +26,8 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type SafeUser = Omit<User, "password">;
 
-// Social platforms enum
-export const platformTypes = ["facebook", "instagram", "twitter", "linkedin", "tiktok", "pinterest", "youtube"] as const;
+// Social platforms enum — includes Threads
+export const platformTypes = ["facebook", "instagram", "twitter", "linkedin", "tiktok", "pinterest", "youtube", "threads"] as const;
 export type PlatformType = typeof platformTypes[number];
 
 // Social accounts connected by users
@@ -71,6 +71,13 @@ export type SocialAccount = typeof socialAccounts.$inferSelect;
 export const postStatuses = ["draft", "scheduled", "published", "failed"] as const;
 export type PostStatus = typeof postStatuses[number];
 
+// Per-platform publish result stored in publishResults JSONB column
+export type PlatformPublishResult = {
+  success: boolean;
+  platformPostId?: string;
+  error?: string;
+};
+
 // Posts table
 export const posts = pgTable("posts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -87,6 +94,10 @@ export const posts = pgTable("posts", {
   impressions: integer("impressions").default(0),
   engagement: integer("engagement").default(0),
   clicks: integer("clicks").default(0),
+  // Per-platform publish outcomes (§3.1)
+  publishResults: jsonb("publish_results").$type<Record<string, PlatformPublishResult>>(),
+  // Platform-specific metadata: YouTube title/description, Pinterest boardId, etc. (§3.1)
+  platformMetadata: jsonb("platform_metadata").$type<Record<string, Record<string, string>>>(),
 });
 
 export const insertPostSchema = createInsertSchema(posts).omit({
@@ -101,6 +112,36 @@ export const insertPostSchema = createInsertSchema(posts).omit({
 
 export type InsertPost = z.infer<typeof insertPostSchema>;
 export type Post = typeof posts.$inferSelect;
+
+// Media table (§3.1)
+export const media = pgTable("media", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  filename: text("filename").notNull(),
+  url: text("url").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  width: integer("width"),
+  height: integer("height"),
+  durationSeconds: integer("duration_seconds"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMediaSchema = createInsertSchema(media).omit({ id: true, createdAt: true });
+export type InsertMedia = z.infer<typeof insertMediaSchema>;
+export type Media = typeof media.$inferSelect;
+
+// postMedia join table (§3.1)
+export const postMedia = pgTable("post_media", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  postId: varchar("post_id").notNull(),
+  mediaId: varchar("media_id").notNull(),
+  position: integer("position").default(0),
+});
+
+export const insertPostMediaSchema = createInsertSchema(postMedia).omit({ id: true });
+export type InsertPostMedia = z.infer<typeof insertPostMediaSchema>;
+export type PostMedia = typeof postMedia.$inferSelect;
 
 // Analytics aggregates
 export const analyticsData = pgTable("analytics_data", {

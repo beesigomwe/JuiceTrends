@@ -762,3 +762,121 @@ export function setupYouTubeOAuth(app: Express) {
     },
   );
 }
+
+// ─── THREADS ─────────────────────────────────────────────────────────────────
+// Threads uses its own OAuth flow via https://threads.net/oauth/authorize
+// Scopes: threads_basic, threads_content_publish, threads_manage_replies
+// Token exchange: https://graph.threads.net/oauth/access_token
+// Long-lived tokens (60 days): GET /access_token?grant_type=th_exchange_token
+
+export function setupThreadsOAuth(app: Express) {
+  app.get("/api/auth/threads", requireAuth, (req: Request, res: Response) => {
+    const state = crypto.randomBytes(24).toString("base64url");
+    (req.session as unknown as Record<string, string>).oauthState = state;
+
+    const params = new URLSearchParams({
+      client_id: process.env.THREADS_APP_ID!,
+      redirect_uri: `${getAppUrl()}/api/auth/threads/callback`,
+      scope: "threads_basic,threads_content_publish,threads_manage_replies",
+      response_type: "code",
+      state,
+    });
+
+    res.redirect(`https://threads.net/oauth/authorize?${params.toString()}`);
+  });
+
+  app.get(
+    "/api/auth/threads/callback",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const { code, state } = req.query;
+        const sessionState = (req.session as unknown as Record<string, string>).oauthState;
+        if (!state || state !== sessionState) {
+          return res.redirect("/accounts?error=invalid_state");
+        }
+        delete (req.session as unknown as Record<string, string>).oauthState;
+
+        if (!code) {
+          return res.redirect("/accounts?error=threads");
+        }
+
+        // Step 1: exchange code for short-lived token
+        const tokenRes = await axios.post(
+          "https://graph.threads.net/oauth/access_token",
+          new URLSearchParams({
+            client_id: process.env.THREADS_APP_ID!,
+            client_secret: process.env.THREADS_APP_SECRET!,
+            grant_type: "authorization_code",
+            redirect_uri: `${getAppUrl()}/api/auth/threads/callback`,
+            code: code as string,
+          }),
+          { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+        );
+
+        const { access_token: shortLivedToken, user_id: threadsUserId } = tokenRes.data;
+
+        // Step 2: exchange for long-lived token (60 days)
+        const longLivedRes = await axios.get(
+          "https://graph.threads.net/access_token",
+          {
+            params: {
+              grant_type: "th_exchange_token",
+              client_secret: process.env.THREADS_APP_SECRET,
+              access_token: shortLivedToken,
+            },
+          },
+        );
+
+        const {
+          access_token: longLivedToken,
+          expires_in,
+        } = longLivedRes.data;
+
+        const tokenExpiresAt =
+          typeof expires_in === "number"
+            ? new Date(Date.now() + expires_in * 1000)
+            : null;
+
+        // Step 3: fetch user profile
+        const profileRes = await axios.get(
+          `https://graph.threads.net/v1.0/${threadsUserId}`,
+          {
+            params: {
+              fields: "id,username,name,threads_profile_picture_url,threads_biography,followers_count",
+              access_token: longLivedToken,
+            },
+          },
+        );
+
+        const profile = profileRes.data;
+        const userId = (req.user as any)?.id as string | undefined;
+
+        if (!userId) {
+          return res.redirect("/accounts?error=threads");
+        }
+
+        await storage.createOrUpdateSocialAccount({
+          userId,
+          platform: "threads",
+          accountName: profile.name ?? profile.username ?? "Threads User",
+          accountHandle: profile.username ?? threadsUserId,
+          avatarUrl: profile.threads_profile_picture_url ?? null,
+          accessToken: longLivedToken,
+          platformUserId: String(threadsUserId),
+          refreshToken: null,
+          tokenExpiresAt,
+          isConnected: true,
+          followers: profile.followers_count ?? 0,
+          engagement: undefined,
+        });
+
+        res.redirect("/accounts?connected=threads");
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("Threads OAuth error:", error);
+        res.redirect("/accounts?error=threads");
+      }
+    },
+  );
+}

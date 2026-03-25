@@ -17,7 +17,8 @@ import {
   AlertCircle,
 } from "lucide-react";
 import type { Post, PostStatus } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function PostsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -25,36 +26,95 @@ export default function PostsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<PostStatus | "all">("all");
   const qc = useQueryClient();
+  const { toast } = useToast();
 
   const { data: posts, isLoading } = useQuery<Post[]>({
     queryKey: ["/api/posts"],
   });
 
+  // Create a new post
   const createPostMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest("POST", "/api/posts", data);
+      const res = await apiRequest("POST", "/api/posts", data);
+      return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/posts"] });
       setDrawerOpen(false);
       setSelectedPost(null);
+      toast({ title: "Post saved successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save post", variant: "destructive" });
     },
   });
 
+  // Update an existing post
+  const updatePostMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/posts/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/posts"] });
+      setDrawerOpen(false);
+      setSelectedPost(null);
+      toast({ title: "Post updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update post", variant: "destructive" });
+    },
+  });
+
+  // Delete a post
   const deletePostMutation = useMutation({
     mutationFn: async (id: string) => {
       return apiRequest("DELETE", `/api/posts/${id}`);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/posts"] });
+      toast({ title: "Post deleted" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete post", variant: "destructive" });
     },
   });
 
-  const handleCreatePost = async (data: any) => {
-    await createPostMutation.mutateAsync({
-      ...data,
-      userId: "demo-user",
-    });
+  // Publish Now
+  const publishNowMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/posts/${id}/publish`, {});
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["/api/posts"] });
+      setDrawerOpen(false);
+      setSelectedPost(null);
+      const results: Record<string, { success: boolean; error?: string }> = data.results ?? {};
+      const failed = Object.entries(results)
+        .filter(([, r]) => !r.success)
+        .map(([p, r]) => `${p}: ${r.error}`);
+      if (failed.length === 0) {
+        toast({ title: "Post published successfully" });
+      } else {
+        toast({
+          title: "Partial publish",
+          description: failed.join("; "),
+          variant: "destructive",
+        });
+      }
+    },
+    onError: () => {
+      toast({ title: "Failed to publish post", variant: "destructive" });
+    },
+  });
+
+  const handleSubmitPost = async (data: any) => {
+    if (selectedPost) {
+      await updatePostMutation.mutateAsync({ id: selectedPost.id, data });
+    } else {
+      await createPostMutation.mutateAsync(data);
+    }
   };
 
   const handleEdit = (post: Post) => {
@@ -67,15 +127,17 @@ export default function PostsPage() {
   };
 
   const handleDuplicate = (post: Post) => {
-    const duplicateData = {
+    createPostMutation.mutate({
       content: post.content,
       platforms: post.platforms,
       hashtags: post.hashtags || [],
       scheduledAt: null,
       status: "draft",
-      userId: "demo-user",
-    };
-    createPostMutation.mutate(duplicateData);
+    });
+  };
+
+  const handlePublishNow = (postId: string) => {
+    publishNowMutation.mutate(postId);
   };
 
   const filteredPosts = posts?.filter((post) => {
@@ -104,6 +166,11 @@ export default function PostsPage() {
     { value: "failed", label: "Failed", icon: AlertCircle, count: counts.failed },
   ];
 
+  const isMutating =
+    createPostMutation.isPending ||
+    updatePostMutation.isPending ||
+    publishNowMutation.isPending;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -113,7 +180,13 @@ export default function PostsPage() {
             Manage all your social media content in one place.
           </p>
         </div>
-        <Button onClick={() => setDrawerOpen(true)} data-testid="button-create-post">
+        <Button
+          onClick={() => {
+            setSelectedPost(null);
+            setDrawerOpen(true);
+          }}
+          data-testid="button-create-post"
+        >
           <Plus className="h-4 w-4 mr-2" />
           Create Post
         </Button>
@@ -186,7 +259,13 @@ export default function PostsPage() {
                     : "Create your first post to get started"}
                 </p>
                 {!searchQuery && (
-                  <Button onClick={() => setDrawerOpen(true)} data-testid="button-create-first-post">
+                  <Button
+                    onClick={() => {
+                      setSelectedPost(null);
+                      setDrawerOpen(true);
+                    }}
+                    data-testid="button-create-first-post"
+                  >
                     <Plus className="h-4 w-4 mr-2" />
                     Create Post
                   </Button>
@@ -203,9 +282,10 @@ export default function PostsPage() {
           setDrawerOpen(open);
           if (!open) setSelectedPost(null);
         }}
-        onSubmit={handleCreatePost}
+        onSubmit={handleSubmitPost}
+        onPublishNow={handlePublishNow}
         editPost={selectedPost}
-        isLoading={createPostMutation.isPending}
+        isLoading={isMutating}
       />
     </div>
   );
