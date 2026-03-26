@@ -10,6 +10,7 @@ import {
   LogOut,
   Layers,
   Sparkles,
+  Megaphone,
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,6 +36,7 @@ const mainMenuItems = [
   { title: "Accounts", url: "/accounts", icon: Users },
   { title: "Brands", url: "/brands", icon: Layers },
   { title: "Suggestions", url: "/suggestions", icon: Sparkles },
+  { title: "Ads", url: "/ads", icon: Megaphone },
 ];
 
 const settingsItems = [

@@ -6,6 +6,10 @@ import {
   brands,
   brandAccounts,
   suggestedPosts,
+  adCampaigns,
+  adSets,
+  adCreatives,
+  adMetrics,
   type User,
   type InsertUser,
   type Post,
@@ -20,6 +24,16 @@ import {
   type ChartDataPoint,
   type SuggestedPost,
   type InsertSuggestedPost,
+  type AdCampaign,
+  type InsertAdCampaign,
+  type AdSet,
+  type InsertAdSet,
+  type AdCreative,
+  type InsertAdCreative,
+  type AdMetric,
+  type InsertAdMetric,
+  type AdCampaignWithSets,
+  type AdMetricSummary,
 } from "@shared/schema";
 import type { IStorage } from "./storage";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -350,5 +364,140 @@ export class DbStorage implements IStorage {
     await this.db
       .delete(suggestedPosts)
       .where(and(eq(suggestedPosts.userId, userId), eq(suggestedPosts.status, 'pending')));
+  }
+
+  // ── Ad Management ──────────────────────────────────────────────────────
+
+  private computeMetricSummary(rows: AdMetric[]): AdMetricSummary {
+    const totalSpend = rows.reduce((a, m) => a + (m.spend ?? 0), 0);
+    const totalImpressions = rows.reduce((a, m) => a + (m.impressions ?? 0), 0);
+    const totalClicks = rows.reduce((a, m) => a + (m.clicks ?? 0), 0);
+    const totalConversions = rows.reduce((a, m) => a + (m.conversions ?? 0), 0);
+    const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : "0";
+    const avgCpm = totalImpressions > 0 ? ((totalSpend / totalImpressions) * 10).toFixed(2) : "0";
+    const avgCpc = totalClicks > 0 ? (totalSpend / totalClicks / 100).toFixed(2) : "0";
+    const avgRoas = totalSpend > 0 ? (totalConversions / (totalSpend / 100)).toFixed(2) : "0";
+    return { totalSpend, totalImpressions, totalClicks, totalConversions, avgCtr, avgCpm, avgCpc, avgRoas };
+  }
+
+  async getAdCampaigns(userId: string): Promise<AdCampaignWithSets[]> {
+    const campaigns = await this.db.select().from(adCampaigns).where(eq(adCampaigns.userId, userId));
+    return Promise.all(campaigns.map(async (c) => {
+      const sets = await this.db.select().from(adSets).where(eq(adSets.campaignId, c.id));
+      const setsWithCreatives = await Promise.all(sets.map(async (s) => {
+        const creatives = await this.db.select().from(adCreatives).where(eq(adCreatives.adSetId, s.id));
+        return { ...s, creatives };
+      }));
+      const metrics = await this.db.select().from(adMetrics).where(eq(adMetrics.campaignId, c.id));
+      return { ...c, adSets: setsWithCreatives, metrics: this.computeMetricSummary(metrics) };
+    }));
+  }
+
+  async getAdCampaign(id: string, userId: string): Promise<AdCampaignWithSets | undefined> {
+    const [c] = await this.db.select().from(adCampaigns).where(and(eq(adCampaigns.id, id), eq(adCampaigns.userId, userId)));
+    if (!c) return undefined;
+    const sets = await this.db.select().from(adSets).where(eq(adSets.campaignId, id));
+    const setsWithCreatives = await Promise.all(sets.map(async (s) => {
+      const creatives = await this.db.select().from(adCreatives).where(eq(adCreatives.adSetId, s.id));
+      return { ...s, creatives };
+    }));
+    const metrics = await this.db.select().from(adMetrics).where(eq(adMetrics.campaignId, id));
+    return { ...c, adSets: setsWithCreatives, metrics: this.computeMetricSummary(metrics) };
+  }
+
+  async createAdCampaign(campaign: InsertAdCampaign): Promise<AdCampaign> {
+    const [c] = await this.db.insert(adCampaigns).values({
+      ...campaign,
+      startDate: campaign.startDate ? new Date(campaign.startDate) : null,
+      endDate: campaign.endDate ? new Date(campaign.endDate) : null,
+    } as any).returning();
+    return c;
+  }
+
+  async updateAdCampaign(id: string, userId: string, update: Partial<InsertAdCampaign>): Promise<AdCampaign | undefined> {
+    const [c] = await this.db.update(adCampaigns)
+      .set({ ...update as any, updatedAt: new Date() })
+      .where(and(eq(adCampaigns.id, id), eq(adCampaigns.userId, userId)))
+      .returning();
+    return c;
+  }
+
+  async deleteAdCampaign(id: string, userId: string): Promise<boolean> {
+    const result = await this.db.delete(adCampaigns)
+      .where(and(eq(adCampaigns.id, id), eq(adCampaigns.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getAdSets(campaignId: string, userId: string): Promise<AdSet[]> {
+    return this.db.select().from(adSets).where(and(eq(adSets.campaignId, campaignId), eq(adSets.userId, userId)));
+  }
+
+  async getAdSet(id: string, userId: string): Promise<AdSet | undefined> {
+    const [s] = await this.db.select().from(adSets).where(and(eq(adSets.id, id), eq(adSets.userId, userId)));
+    return s;
+  }
+
+  async createAdSet(adSet: InsertAdSet): Promise<AdSet> {
+    const [s] = await this.db.insert(adSets).values({
+      ...adSet,
+      startDate: adSet.startDate ? new Date(adSet.startDate) : null,
+      endDate: adSet.endDate ? new Date(adSet.endDate) : null,
+    } as any).returning();
+    return s;
+  }
+
+  async updateAdSet(id: string, userId: string, update: Partial<InsertAdSet>): Promise<AdSet | undefined> {
+    const [s] = await this.db.update(adSets)
+      .set({ ...update as any, updatedAt: new Date() })
+      .where(and(eq(adSets.id, id), eq(adSets.userId, userId)))
+      .returning();
+    return s;
+  }
+
+  async deleteAdSet(id: string, userId: string): Promise<boolean> {
+    const result = await this.db.delete(adSets).where(and(eq(adSets.id, id), eq(adSets.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getAdCreatives(adSetId: string, userId: string): Promise<AdCreative[]> {
+    return this.db.select().from(adCreatives).where(and(eq(adCreatives.adSetId, adSetId), eq(adCreatives.userId, userId)));
+  }
+
+  async getAdCreative(id: string, userId: string): Promise<AdCreative | undefined> {
+    const [c] = await this.db.select().from(adCreatives).where(and(eq(adCreatives.id, id), eq(adCreatives.userId, userId)));
+    return c;
+  }
+
+  async createAdCreative(creative: InsertAdCreative): Promise<AdCreative> {
+    const [c] = await this.db.insert(adCreatives).values(creative as any).returning();
+    return c;
+  }
+
+  async updateAdCreative(id: string, userId: string, update: Partial<InsertAdCreative>): Promise<AdCreative | undefined> {
+    const [c] = await this.db.update(adCreatives)
+      .set({ ...update as any, updatedAt: new Date() })
+      .where(and(eq(adCreatives.id, id), eq(adCreatives.userId, userId)))
+      .returning();
+    return c;
+  }
+
+  async deleteAdCreative(id: string, userId: string): Promise<boolean> {
+    const result = await this.db.delete(adCreatives).where(and(eq(adCreatives.id, id), eq(adCreatives.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getAdMetrics(campaignId: string, userId: string): Promise<AdMetric[]> {
+    return this.db.select().from(adMetrics).where(and(eq(adMetrics.campaignId, campaignId), eq(adMetrics.userId, userId)));
+  }
+
+  async createAdMetric(metric: InsertAdMetric): Promise<AdMetric> {
+    const [m] = await this.db.insert(adMetrics).values(metric as any).returning();
+    return m;
+  }
+
+  async getAdMetricSummary(campaignId: string, userId: string): Promise<AdMetricSummary> {
+    const rows = await this.db.select().from(adMetrics)
+      .where(and(eq(adMetrics.campaignId, campaignId), eq(adMetrics.userId, userId)));
+    return this.computeMetricSummary(rows);
   }
 }

@@ -280,7 +280,175 @@ export const insertSuggestedPostSchema = createInsertSchema(suggestedPosts).omit
 export type InsertSuggestedPost = z.infer<typeof insertSuggestedPostSchema>;
 export type SuggestedPost = typeof suggestedPosts.$inferSelect;
 
-// Best-time window returned by the engine (not persisted, computed on the fly)
+// ─── Ad Management ───────────────────────────────────────────────────────────
+
+export const adCampaignObjectives = ["awareness", "traffic", "engagement", "leads", "conversions", "sales"] as const;
+export type AdCampaignObjective = typeof adCampaignObjectives[number];
+
+export const adCampaignStatuses = ["draft", "active", "paused", "completed", "archived"] as const;
+export type AdCampaignStatus = typeof adCampaignStatuses[number];
+
+export const adPlatforms = ["facebook", "instagram", "linkedin", "twitter"] as const;
+export type AdPlatform = typeof adPlatforms[number];
+
+export const adFormats = ["image", "video", "carousel", "story", "text"] as const;
+export type AdFormat = typeof adFormats[number];
+
+export const adBidStrategies = ["lowest_cost", "cost_cap", "bid_cap", "target_cost"] as const;
+export type AdBidStrategy = typeof adBidStrategies[number];
+
+// Ad Campaigns — top-level container
+export const adCampaigns = pgTable("ad_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  brandId: varchar("brand_id"),
+  name: text("name").notNull(),
+  objective: text("objective").notNull().$type<AdCampaignObjective>().default("awareness"),
+  platform: text("platform").notNull().$type<AdPlatform>(),
+  status: text("status").notNull().$type<AdCampaignStatus>().default("draft"),
+  totalBudget: integer("total_budget").default(0),       // in cents
+  dailyBudget: integer("daily_budget").default(0),       // in cents
+  currency: text("currency").default("USD"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  platformCampaignId: text("platform_campaign_id"),      // ID returned by the ad platform
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAdCampaignSchema = createInsertSchema(adCampaigns).omit({
+  id: true, createdAt: true, updatedAt: true,
+}).extend({
+  brandId: z.string().optional().nullable(),
+  platformCampaignId: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  startDate: z.string().optional().nullable(),
+  endDate: z.string().optional().nullable(),
+});
+export type InsertAdCampaign = z.infer<typeof insertAdCampaignSchema>;
+export type AdCampaign = typeof adCampaigns.$inferSelect;
+
+// Ad Sets — audience + budget + schedule within a campaign
+export const adSets = pgTable("ad_sets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().$type<AdCampaignStatus>().default("draft"),
+  // Audience targeting (stored as JSONB for flexibility)
+  targeting: jsonb("targeting").$type<{
+    ageMin?: number;
+    ageMax?: number;
+    genders?: string[];
+    locations?: string[];
+    interests?: string[];
+    languages?: string[];
+    customAudiences?: string[];
+  }>(),
+  placement: text("placement"),                          // e.g. "feed", "stories", "reels"
+  bidStrategy: text("bid_strategy").$type<AdBidStrategy>().default("lowest_cost"),
+  bidAmount: integer("bid_amount").default(0),           // in cents
+  dailyBudget: integer("daily_budget").default(0),       // overrides campaign if set
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  platformAdSetId: text("platform_ad_set_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAdSetSchema = createInsertSchema(adSets).omit({
+  id: true, createdAt: true, updatedAt: true,
+}).extend({
+  platformAdSetId: z.string().optional().nullable(),
+  placement: z.string().optional().nullable(),
+  startDate: z.string().optional().nullable(),
+  endDate: z.string().optional().nullable(),
+});
+export type InsertAdSet = z.infer<typeof insertAdSetSchema>;
+export type AdSet = typeof adSets.$inferSelect;
+
+// Ad Creatives — the actual ad content
+export const adCreatives = pgTable("ad_creatives", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adSetId: varchar("ad_set_id").notNull(),
+  campaignId: varchar("campaign_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  name: text("name").notNull(),
+  format: text("format").notNull().$type<AdFormat>().default("image"),
+  headline: text("headline"),
+  bodyText: text("body_text"),
+  callToAction: text("call_to_action"),                  // e.g. "Learn More", "Shop Now"
+  destinationUrl: text("destination_url"),
+  mediaUrl: text("media_url"),
+  mediaUrls: text("media_urls").array(),                 // for carousel
+  status: text("status").notNull().$type<AdCampaignStatus>().default("draft"),
+  platformCreativeId: text("platform_creative_id"),
+  previewUrl: text("preview_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAdCreativeSchema = createInsertSchema(adCreatives).omit({
+  id: true, createdAt: true, updatedAt: true,
+}).extend({
+  headline: z.string().optional().nullable(),
+  bodyText: z.string().optional().nullable(),
+  callToAction: z.string().optional().nullable(),
+  destinationUrl: z.string().optional().nullable(),
+  mediaUrl: z.string().optional().nullable(),
+  platformCreativeId: z.string().optional().nullable(),
+  previewUrl: z.string().optional().nullable(),
+});
+export type InsertAdCreative = z.infer<typeof insertAdCreativeSchema>;
+export type AdCreative = typeof adCreatives.$inferSelect;
+
+// Ad Metrics — daily performance snapshots per campaign
+export const adMetrics = pgTable("ad_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull(),
+  adSetId: varchar("ad_set_id"),
+  userId: varchar("user_id").notNull(),
+  date: timestamp("date").notNull(),
+  spend: integer("spend").default(0),                    // in cents
+  impressions: integer("impressions").default(0),
+  reach: integer("reach").default(0),
+  clicks: integer("clicks").default(0),
+  conversions: integer("conversions").default(0),
+  // Computed fields stored for quick reads
+  ctr: text("ctr").default("0"),                         // click-through rate as string e.g. "2.34"
+  cpm: text("cpm").default("0"),                         // cost per mille
+  cpc: text("cpc").default("0"),                         // cost per click
+  roas: text("roas").default("0"),                       // return on ad spend
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAdMetricSchema = createInsertSchema(adMetrics).omit({
+  id: true, createdAt: true,
+}).extend({
+  adSetId: z.string().optional().nullable(),
+});
+export type InsertAdMetric = z.infer<typeof insertAdMetricSchema>;
+export type AdMetric = typeof adMetrics.$inferSelect;
+
+// Convenience types for the API
+export type AdCampaignWithSets = AdCampaign & {
+  adSets: (AdSet & { creatives: AdCreative[] })[];
+  metrics?: AdMetricSummary;
+};
+
+export type AdMetricSummary = {
+  totalSpend: number;       // cents
+  totalImpressions: number;
+  totalClicks: number;
+  totalConversions: number;
+  avgCtr: string;
+  avgCpm: string;
+  avgCpc: string;
+  avgRoas: string;
+};
+
+// ─── Best-time window returned by the engine (not persisted, computed on the fly)
 export type BestTimeWindow = {
   platform: PlatformType;
   dayOfWeek: number;        // 0 = Sunday

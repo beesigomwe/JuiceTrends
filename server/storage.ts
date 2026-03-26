@@ -15,6 +15,16 @@ import {
   type SuggestedPost,
   type InsertSuggestedPost,
   type SuggestionStatus,
+  type AdCampaign,
+  type InsertAdCampaign,
+  type AdSet,
+  type InsertAdSet,
+  type AdCreative,
+  type InsertAdCreative,
+  type AdMetric,
+  type InsertAdMetric,
+  type AdCampaignWithSets,
+  type AdMetricSummary,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -57,6 +67,29 @@ export interface IStorage {
   updateSuggestion(id: string, userId: string, update: Partial<Pick<SuggestedPost, 'status' | 'scheduledPostId'>>): Promise<SuggestedPost | undefined>;
   deleteSuggestion(id: string, userId: string): Promise<boolean>;
   deletePendingSuggestions(userId: string): Promise<void>;
+
+  // Ad Management
+  getAdCampaigns(userId: string): Promise<AdCampaignWithSets[]>;
+  getAdCampaign(id: string, userId: string): Promise<AdCampaignWithSets | undefined>;
+  createAdCampaign(campaign: InsertAdCampaign): Promise<AdCampaign>;
+  updateAdCampaign(id: string, userId: string, update: Partial<InsertAdCampaign>): Promise<AdCampaign | undefined>;
+  deleteAdCampaign(id: string, userId: string): Promise<boolean>;
+
+  getAdSets(campaignId: string, userId: string): Promise<AdSet[]>;
+  getAdSet(id: string, userId: string): Promise<AdSet | undefined>;
+  createAdSet(adSet: InsertAdSet): Promise<AdSet>;
+  updateAdSet(id: string, userId: string, update: Partial<InsertAdSet>): Promise<AdSet | undefined>;
+  deleteAdSet(id: string, userId: string): Promise<boolean>;
+
+  getAdCreatives(adSetId: string, userId: string): Promise<AdCreative[]>;
+  getAdCreative(id: string, userId: string): Promise<AdCreative | undefined>;
+  createAdCreative(creative: InsertAdCreative): Promise<AdCreative>;
+  updateAdCreative(id: string, userId: string, update: Partial<InsertAdCreative>): Promise<AdCreative | undefined>;
+  deleteAdCreative(id: string, userId: string): Promise<boolean>;
+
+  getAdMetrics(campaignId: string, userId: string): Promise<AdMetric[]>;
+  createAdMetric(metric: InsertAdMetric): Promise<AdMetric>;
+  getAdMetricSummary(campaignId: string, userId: string): Promise<AdMetricSummary>;
 }
 
 export class MemStorage implements IStorage {
@@ -66,6 +99,10 @@ export class MemStorage implements IStorage {
   private brands: Map<string, Brand>;
   private brandAccounts: Map<string, BrandAccount>;
   private suggestedPosts: Map<string, SuggestedPost>;
+  private adCampaigns: Map<string, AdCampaign>;
+  private adSets: Map<string, AdSet>;
+  private adCreatives: Map<string, AdCreative>;
+  private adMetrics: Map<string, AdMetric>;
 
   constructor() {
     this.users = new Map();
@@ -74,6 +111,10 @@ export class MemStorage implements IStorage {
     this.brands = new Map();
     this.brandAccounts = new Map();
     this.suggestedPosts = new Map();
+    this.adCampaigns = new Map();
+    this.adSets = new Map();
+    this.adCreatives = new Map();
+    this.adMetrics = new Map();
 
     this.seedData();
   }
@@ -683,6 +724,224 @@ export class MemStorage implements IStorage {
         this.suggestedPosts.delete(id);
       }
     }
+  }
+
+  // ── Ad Management ──────────────────────────────────────────────────────
+
+  private buildCampaignWithSets(campaign: AdCampaign): AdCampaignWithSets {
+    const sets = Array.from(this.adSets.values())
+      .filter((s) => s.campaignId === campaign.id)
+      .map((s) => ({
+        ...s,
+        creatives: Array.from(this.adCreatives.values()).filter((c) => c.adSetId === s.id),
+      }));
+    const metrics = this.computeMetricSummary(campaign.id);
+    return { ...campaign, adSets: sets, metrics };
+  }
+
+  private computeMetricSummary(campaignId: string): AdMetricSummary {
+    const rows = Array.from(this.adMetrics.values()).filter((m) => m.campaignId === campaignId);
+    const totalSpend = rows.reduce((a, m) => a + (m.spend ?? 0), 0);
+    const totalImpressions = rows.reduce((a, m) => a + (m.impressions ?? 0), 0);
+    const totalClicks = rows.reduce((a, m) => a + (m.clicks ?? 0), 0);
+    const totalConversions = rows.reduce((a, m) => a + (m.conversions ?? 0), 0);
+    const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : "0";
+    const avgCpm = totalImpressions > 0 ? ((totalSpend / totalImpressions) * 10).toFixed(2) : "0";
+    const avgCpc = totalClicks > 0 ? (totalSpend / totalClicks / 100).toFixed(2) : "0";
+    const avgRoas = totalSpend > 0 ? (totalConversions / (totalSpend / 100)).toFixed(2) : "0";
+    return { totalSpend, totalImpressions, totalClicks, totalConversions, avgCtr, avgCpm, avgCpc, avgRoas };
+  }
+
+  async getAdCampaigns(userId: string): Promise<AdCampaignWithSets[]> {
+    return Array.from(this.adCampaigns.values())
+      .filter((c) => c.userId === userId)
+      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+      .map((c) => this.buildCampaignWithSets(c));
+  }
+
+  async getAdCampaign(id: string, userId: string): Promise<AdCampaignWithSets | undefined> {
+    const c = this.adCampaigns.get(id);
+    if (!c || c.userId !== userId) return undefined;
+    return this.buildCampaignWithSets(c);
+  }
+
+  async createAdCampaign(campaign: InsertAdCampaign): Promise<AdCampaign> {
+    const id = randomUUID();
+    const now = new Date();
+    const c: AdCampaign = {
+      id,
+      ...campaign,
+      platform: (campaign.platform ?? "facebook") as AdCampaign["platform"],
+      objective: (campaign.objective ?? "awareness") as AdCampaign["objective"],
+      status: (campaign.status ?? "draft") as AdCampaign["status"],
+      totalBudget: campaign.totalBudget ?? 0,
+      dailyBudget: campaign.dailyBudget ?? 0,
+      currency: campaign.currency ?? "USD",
+      brandId: campaign.brandId ?? null,
+      platformCampaignId: campaign.platformCampaignId ?? null,
+      notes: campaign.notes ?? null,
+      startDate: campaign.startDate ? new Date(campaign.startDate) : null,
+      endDate: campaign.endDate ? new Date(campaign.endDate) : null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.adCampaigns.set(id, c);
+    return c;
+  }
+
+  async updateAdCampaign(id: string, userId: string, update: Partial<InsertAdCampaign>): Promise<AdCampaign | undefined> {
+    const c = this.adCampaigns.get(id);
+    if (!c || c.userId !== userId) return undefined;
+    const updated: AdCampaign = { ...c, ...update as any, updatedAt: new Date() };
+    this.adCampaigns.set(id, updated);
+    return updated;
+  }
+
+  async deleteAdCampaign(id: string, userId: string): Promise<boolean> {
+    const c = this.adCampaigns.get(id);
+    if (!c || c.userId !== userId) return false;
+    this.adCampaigns.delete(id);
+    // cascade delete ad sets and creatives
+    for (const [sid, s] of Array.from(this.adSets.entries())) {
+      if (s.campaignId === id) {
+        for (const [cid, cr] of Array.from(this.adCreatives.entries())) {
+          if (cr.adSetId === sid) this.adCreatives.delete(cid);
+        }
+        this.adSets.delete(sid);
+      }
+    }
+    return true;
+  }
+
+  async getAdSets(campaignId: string, userId: string): Promise<AdSet[]> {
+    return Array.from(this.adSets.values()).filter(
+      (s) => s.campaignId === campaignId && s.userId === userId
+    );
+  }
+
+  async getAdSet(id: string, userId: string): Promise<AdSet | undefined> {
+    const s = this.adSets.get(id);
+    return s && s.userId === userId ? s : undefined;
+  }
+
+  async createAdSet(adSet: InsertAdSet): Promise<AdSet> {
+    const id = randomUUID();
+    const now = new Date();
+    const s: AdSet = {
+      id,
+      ...adSet,
+      status: (adSet.status ?? "draft") as any,
+      targeting: (adSet.targeting ?? null) as AdSet["targeting"],
+      placement: adSet.placement ?? null,
+      bidStrategy: (adSet.bidStrategy ?? "lowest_cost") as any,
+      bidAmount: adSet.bidAmount ?? 0,
+      dailyBudget: adSet.dailyBudget ?? 0,
+      platformAdSetId: adSet.platformAdSetId ?? null,
+      startDate: adSet.startDate ? new Date(adSet.startDate) : null,
+      endDate: adSet.endDate ? new Date(adSet.endDate) : null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.adSets.set(id, s);
+    return s;
+  }
+
+  async updateAdSet(id: string, userId: string, update: Partial<InsertAdSet>): Promise<AdSet | undefined> {
+    const s = this.adSets.get(id);
+    if (!s || s.userId !== userId) return undefined;
+    const updated: AdSet = { ...s, ...update as any, updatedAt: new Date() };
+    this.adSets.set(id, updated);
+    return updated;
+  }
+
+  async deleteAdSet(id: string, userId: string): Promise<boolean> {
+    const s = this.adSets.get(id);
+    if (!s || s.userId !== userId) return false;
+    this.adSets.delete(id);
+    for (const [cid, cr] of Array.from(this.adCreatives.entries())) {
+      if (cr.adSetId === id) this.adCreatives.delete(cid);
+    }
+    return true;
+  }
+
+  async getAdCreatives(adSetId: string, userId: string): Promise<AdCreative[]> {
+    return Array.from(this.adCreatives.values()).filter(
+      (c) => c.adSetId === adSetId && c.userId === userId
+    );
+  }
+
+  async getAdCreative(id: string, userId: string): Promise<AdCreative | undefined> {
+    const c = this.adCreatives.get(id);
+    return c && c.userId === userId ? c : undefined;
+  }
+
+  async createAdCreative(creative: InsertAdCreative): Promise<AdCreative> {
+    const id = randomUUID();
+    const now = new Date();
+    const c: AdCreative = {
+      id,
+      ...creative,
+      format: (creative.format ?? "image") as any,
+      status: (creative.status ?? "draft") as any,
+      headline: creative.headline ?? null,
+      bodyText: creative.bodyText ?? null,
+      callToAction: creative.callToAction ?? null,
+      destinationUrl: creative.destinationUrl ?? null,
+      mediaUrl: creative.mediaUrl ?? null,
+      mediaUrls: creative.mediaUrls ?? null,
+      platformCreativeId: creative.platformCreativeId ?? null,
+      previewUrl: creative.previewUrl ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.adCreatives.set(id, c);
+    return c;
+  }
+
+  async updateAdCreative(id: string, userId: string, update: Partial<InsertAdCreative>): Promise<AdCreative | undefined> {
+    const c = this.adCreatives.get(id);
+    if (!c || c.userId !== userId) return undefined;
+    const updated: AdCreative = { ...c, ...update as any, updatedAt: new Date() };
+    this.adCreatives.set(id, updated);
+    return updated;
+  }
+
+  async deleteAdCreative(id: string, userId: string): Promise<boolean> {
+    const c = this.adCreatives.get(id);
+    if (!c || c.userId !== userId) return false;
+    this.adCreatives.delete(id);
+    return true;
+  }
+
+  async getAdMetrics(campaignId: string, userId: string): Promise<AdMetric[]> {
+    return Array.from(this.adMetrics.values()).filter(
+      (m) => m.campaignId === campaignId && m.userId === userId
+    );
+  }
+
+  async createAdMetric(metric: InsertAdMetric): Promise<AdMetric> {
+    const id = randomUUID();
+    const m: AdMetric = {
+      id,
+      ...metric,
+      adSetId: metric.adSetId ?? null,
+      spend: metric.spend ?? 0,
+      impressions: metric.impressions ?? 0,
+      reach: metric.reach ?? 0,
+      clicks: metric.clicks ?? 0,
+      conversions: metric.conversions ?? 0,
+      ctr: metric.ctr ?? "0",
+      cpm: metric.cpm ?? "0",
+      cpc: metric.cpc ?? "0",
+      roas: metric.roas ?? "0",
+      createdAt: new Date(),
+    };
+    this.adMetrics.set(id, m);
+    return m;
+  }
+
+  async getAdMetricSummary(campaignId: string, userId: string): Promise<AdMetricSummary> {
+    return this.computeMetricSummary(campaignId);
   }
 }
 
