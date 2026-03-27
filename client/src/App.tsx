@@ -19,6 +19,7 @@ import SettingsPage from "@/pages/settings";
 import BrandsPage from "@/pages/brands";
 import SuggestionsPage from "@/pages/suggestions";
 import AdsPage from "@/pages/ads";
+import NewsletterPage from "@/pages/newsletter";
 import LoginPage from "@/pages/login";
 import SignupPage from "@/pages/signup";
 import { ProtectedRoute } from "@/components/protected-route";
@@ -37,6 +38,7 @@ function AuthedRoutes() {
       <Route path="/brands" component={BrandsPage} />
       <Route path="/suggestions" component={SuggestionsPage} />
       <Route path="/ads" component={AdsPage} />
+      <Route path="/newsletter" component={NewsletterPage} />
       <Route component={NotFound} />
     </Switch>
   );

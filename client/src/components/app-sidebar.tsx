@@ -11,6 +11,7 @@ import {
   Layers,
   Sparkles,
   Megaphone,
+  Mail,
 } from "lucide-react";
 import {
   Sidebar,
@@ -37,6 +38,7 @@ const mainMenuItems = [
   { title: "Brands", url: "/brands", icon: Layers },
   { title: "Suggestions", url: "/suggestions", icon: Sparkles },
   { title: "Ads", url: "/ads", icon: Megaphone },
+  { title: "Newsletter", url: "/newsletter", icon: Mail },
 ];
 
 const settingsItems = [

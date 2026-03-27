@@ -10,6 +10,8 @@ import {
   adSets,
   adCreatives,
   adMetrics,
+  newsletterSubscribers,
+  newsletters,
   type User,
   type InsertUser,
   type Post,
@@ -34,6 +36,10 @@ import {
   type InsertAdMetric,
   type AdCampaignWithSets,
   type AdMetricSummary,
+  type NewsletterSubscriber,
+  type InsertNewsletterSubscriber,
+  type Newsletter,
+  type InsertNewsletter,
 } from "@shared/schema";
 import type { IStorage } from "./storage";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -499,5 +505,93 @@ export class DbStorage implements IStorage {
     const rows = await this.db.select().from(adMetrics)
       .where(and(eq(adMetrics.campaignId, campaignId), eq(adMetrics.userId, userId)));
     return this.computeMetricSummary(rows);
+  }
+
+  // ── Newsletter ─────────────────────────────────────────────────────────────
+
+  async getNewsletterSubscribers(userId: string): Promise<NewsletterSubscriber[]> {
+    return this.db.select().from(newsletterSubscribers)
+      .where(eq(newsletterSubscribers.userId, userId))
+      .orderBy(desc(newsletterSubscribers.subscribedAt));
+  }
+
+  async getNewsletterSubscriber(id: string, userId: string): Promise<NewsletterSubscriber | undefined> {
+    const [row] = await this.db.select().from(newsletterSubscribers)
+      .where(and(eq(newsletterSubscribers.id, id), eq(newsletterSubscribers.userId, userId))).limit(1);
+    return row;
+  }
+
+  async createNewsletterSubscriber(subscriber: InsertNewsletterSubscriber): Promise<NewsletterSubscriber> {
+    const [row] = await this.db.insert(newsletterSubscribers).values(subscriber as any).returning();
+    return row;
+  }
+
+  async updateNewsletterSubscriber(id: string, userId: string, updates: Partial<InsertNewsletterSubscriber>): Promise<NewsletterSubscriber | undefined> {
+    const extra: Record<string, any> = {};
+    if (updates.status === 'unsubscribed') extra.unsubscribedAt = new Date();
+    const [row] = await this.db.update(newsletterSubscribers)
+      .set({ ...updates as any, ...extra })
+      .where(and(eq(newsletterSubscribers.id, id), eq(newsletterSubscribers.userId, userId)))
+      .returning();
+    return row;
+  }
+
+  async deleteNewsletterSubscriber(id: string, userId: string): Promise<boolean> {
+    const result = await this.db.delete(newsletterSubscribers)
+      .where(and(eq(newsletterSubscribers.id, id), eq(newsletterSubscribers.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async bulkImportNewsletterSubscribers(userId: string, subscribers: InsertNewsletterSubscriber[]): Promise<{ imported: number; skipped: number }> {
+    let imported = 0; let skipped = 0;
+    for (const sub of subscribers) {
+      try {
+        await this.db.insert(newsletterSubscribers).values({ ...sub as any, userId });
+        imported++;
+      } catch (e: any) {
+        if (e?.code === '23505') { skipped++; } else { throw e; }
+      }
+    }
+    return { imported, skipped };
+  }
+
+  async getNewsletters(userId: string): Promise<Newsletter[]> {
+    return this.db.select().from(newsletters)
+      .where(eq(newsletters.userId, userId))
+      .orderBy(desc(newsletters.createdAt));
+  }
+
+  async getNewsletter(id: string, userId: string): Promise<Newsletter | undefined> {
+    const [row] = await this.db.select().from(newsletters)
+      .where(and(eq(newsletters.id, id), eq(newsletters.userId, userId))).limit(1);
+    return row;
+  }
+
+  async createNewsletter(newsletter: InsertNewsletter): Promise<Newsletter> {
+    const [row] = await this.db.insert(newsletters).values(newsletter as any).returning();
+    return row;
+  }
+
+  async updateNewsletter(id: string, userId: string, updates: Partial<InsertNewsletter>): Promise<Newsletter | undefined> {
+    const [row] = await this.db.update(newsletters)
+      .set({ ...updates as any, updatedAt: new Date() })
+      .where(and(eq(newsletters.id, id), eq(newsletters.userId, userId)))
+      .returning();
+    return row;
+  }
+
+  async deleteNewsletter(id: string, userId: string): Promise<boolean> {
+    const result = await this.db.delete(newsletters)
+      .where(and(eq(newsletters.id, id), eq(newsletters.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async sendNewsletter(id: string, userId: string, recipientCount: number): Promise<Newsletter> {
+    const [row] = await this.db.update(newsletters)
+      .set({ status: 'sent', sentAt: new Date(), recipientCount, updatedAt: new Date() })
+      .where(and(eq(newsletters.id, id), eq(newsletters.userId, userId)))
+      .returning();
+    if (!row) throw new Error('Newsletter not found');
+    return row;
   }
 }

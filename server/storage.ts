@@ -25,6 +25,10 @@ import {
   type InsertAdMetric,
   type AdCampaignWithSets,
   type AdMetricSummary,
+  type NewsletterSubscriber,
+  type InsertNewsletterSubscriber,
+  type Newsletter,
+  type InsertNewsletter,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -90,6 +94,21 @@ export interface IStorage {
   getAdMetrics(campaignId: string, userId: string): Promise<AdMetric[]>;
   createAdMetric(metric: InsertAdMetric): Promise<AdMetric>;
   getAdMetricSummary(campaignId: string, userId: string): Promise<AdMetricSummary>;
+
+  // Newsletter
+  getNewsletterSubscribers(userId: string): Promise<NewsletterSubscriber[]>;
+  getNewsletterSubscriber(id: string, userId: string): Promise<NewsletterSubscriber | undefined>;
+  createNewsletterSubscriber(subscriber: InsertNewsletterSubscriber): Promise<NewsletterSubscriber>;
+  updateNewsletterSubscriber(id: string, userId: string, updates: Partial<InsertNewsletterSubscriber>): Promise<NewsletterSubscriber | undefined>;
+  deleteNewsletterSubscriber(id: string, userId: string): Promise<boolean>;
+  bulkImportNewsletterSubscribers(userId: string, subscribers: InsertNewsletterSubscriber[]): Promise<{ imported: number; skipped: number }>;
+
+  getNewsletters(userId: string): Promise<Newsletter[]>;
+  getNewsletter(id: string, userId: string): Promise<Newsletter | undefined>;
+  createNewsletter(newsletter: InsertNewsletter): Promise<Newsletter>;
+  updateNewsletter(id: string, userId: string, updates: Partial<InsertNewsletter>): Promise<Newsletter | undefined>;
+  deleteNewsletter(id: string, userId: string): Promise<boolean>;
+  sendNewsletter(id: string, userId: string, recipientCount: number): Promise<Newsletter>;
 }
 
 export class MemStorage implements IStorage {
@@ -103,6 +122,8 @@ export class MemStorage implements IStorage {
   private adSets: Map<string, AdSet>;
   private adCreatives: Map<string, AdCreative>;
   private adMetrics: Map<string, AdMetric>;
+  private newsletterSubscribers: Map<string, NewsletterSubscriber>;
+  private newsletters: Map<string, Newsletter>;
 
   constructor() {
     this.users = new Map();
@@ -115,6 +136,8 @@ export class MemStorage implements IStorage {
     this.adSets = new Map();
     this.adCreatives = new Map();
     this.adMetrics = new Map();
+    this.newsletterSubscribers = new Map();
+    this.newsletters = new Map();
 
     this.seedData();
   }
@@ -942,6 +965,144 @@ export class MemStorage implements IStorage {
 
   async getAdMetricSummary(campaignId: string, userId: string): Promise<AdMetricSummary> {
     return this.computeMetricSummary(campaignId);
+  }
+
+  // ── Newsletter ─────────────────────────────────────────────────────────────
+
+  async getNewsletterSubscribers(userId: string): Promise<NewsletterSubscriber[]> {
+    return Array.from(this.newsletterSubscribers.values())
+      .filter((s) => s.userId === userId)
+      .sort((a, b) => new Date(b.subscribedAt!).getTime() - new Date(a.subscribedAt!).getTime());
+  }
+
+  async getNewsletterSubscriber(id: string, userId: string): Promise<NewsletterSubscriber | undefined> {
+    const s = this.newsletterSubscribers.get(id);
+    return s && s.userId === userId ? s : undefined;
+  }
+
+  async createNewsletterSubscriber(subscriber: InsertNewsletterSubscriber): Promise<NewsletterSubscriber> {
+    // Check uniqueness
+    const dup = Array.from(this.newsletterSubscribers.values()).find(
+      (s) => s.userId === subscriber.userId && s.email === subscriber.email
+    );
+    if (dup) { const e: any = new Error('duplicate'); e.code = '23505'; throw e; }
+    const id = randomUUID();
+    const now = new Date();
+    const s: NewsletterSubscriber = {
+      id,
+      userId: subscriber.userId,
+      email: subscriber.email,
+      name: subscriber.name ?? null,
+      status: (subscriber.status ?? 'active') as NewsletterSubscriber['status'],
+      tags: subscriber.tags ?? null,
+      source: subscriber.source ?? 'manual',
+      subscribedAt: now,
+      unsubscribedAt: null,
+    };
+    this.newsletterSubscribers.set(id, s);
+    return s;
+  }
+
+  async updateNewsletterSubscriber(id: string, userId: string, updates: Partial<InsertNewsletterSubscriber>): Promise<NewsletterSubscriber | undefined> {
+    const s = this.newsletterSubscribers.get(id);
+    if (!s || s.userId !== userId) return undefined;
+    const updated: NewsletterSubscriber = {
+      ...s,
+      name: updates.name !== undefined ? (updates.name ?? null) : s.name,
+      status: (updates.status ?? s.status) as NewsletterSubscriber['status'],
+      tags: updates.tags !== undefined ? (updates.tags ?? null) : s.tags,
+      unsubscribedAt: updates.status === 'unsubscribed' ? new Date() : s.unsubscribedAt,
+    };
+    this.newsletterSubscribers.set(id, updated);
+    return updated;
+  }
+
+  async deleteNewsletterSubscriber(id: string, userId: string): Promise<boolean> {
+    const s = this.newsletterSubscribers.get(id);
+    if (!s || s.userId !== userId) return false;
+    this.newsletterSubscribers.delete(id);
+    return true;
+  }
+
+  async bulkImportNewsletterSubscribers(userId: string, subscribers: InsertNewsletterSubscriber[]): Promise<{ imported: number; skipped: number }> {
+    let imported = 0; let skipped = 0;
+    for (const sub of subscribers) {
+      const dup = Array.from(this.newsletterSubscribers.values()).find(
+        (s) => s.userId === userId && s.email === sub.email
+      );
+      if (dup) { skipped++; continue; }
+      await this.createNewsletterSubscriber({ ...sub, userId });
+      imported++;
+    }
+    return { imported, skipped };
+  }
+
+  async getNewsletters(userId: string): Promise<Newsletter[]> {
+    return Array.from(this.newsletters.values())
+      .filter((n) => n.userId === userId)
+      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+  }
+
+  async getNewsletter(id: string, userId: string): Promise<Newsletter | undefined> {
+    const n = this.newsletters.get(id);
+    return n && n.userId === userId ? n : undefined;
+  }
+
+  async createNewsletter(newsletter: InsertNewsletter): Promise<Newsletter> {
+    const id = randomUUID();
+    const now = new Date();
+    const n: Newsletter = {
+      id,
+      userId: newsletter.userId,
+      subject: newsletter.subject,
+      previewText: newsletter.previewText ?? null,
+      bodyHtml: newsletter.bodyHtml,
+      bodyText: newsletter.bodyText ?? null,
+      status: (newsletter.status ?? 'draft') as Newsletter['status'],
+      scheduledAt: newsletter.scheduledAt ? new Date(newsletter.scheduledAt) : null,
+      sentAt: null,
+      recipientCount: 0,
+      openCount: 0,
+      clickCount: 0,
+      tags: newsletter.tags ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.newsletters.set(id, n);
+    return n;
+  }
+
+  async updateNewsletter(id: string, userId: string, updates: Partial<InsertNewsletter>): Promise<Newsletter | undefined> {
+    const n = this.newsletters.get(id);
+    if (!n || n.userId !== userId) return undefined;
+    const updated: Newsletter = {
+      ...n,
+      subject: updates.subject ?? n.subject,
+      previewText: updates.previewText !== undefined ? (updates.previewText ?? null) : n.previewText,
+      bodyHtml: updates.bodyHtml ?? n.bodyHtml,
+      bodyText: updates.bodyText !== undefined ? (updates.bodyText ?? null) : n.bodyText,
+      status: (updates.status ?? n.status) as Newsletter['status'],
+      scheduledAt: updates.scheduledAt !== undefined ? (updates.scheduledAt ? new Date(updates.scheduledAt) : null) : n.scheduledAt,
+      tags: updates.tags !== undefined ? (updates.tags ?? null) : n.tags,
+      updatedAt: new Date(),
+    };
+    this.newsletters.set(id, updated);
+    return updated;
+  }
+
+  async deleteNewsletter(id: string, userId: string): Promise<boolean> {
+    const n = this.newsletters.get(id);
+    if (!n || n.userId !== userId) return false;
+    this.newsletters.delete(id);
+    return true;
+  }
+
+  async sendNewsletter(id: string, userId: string, recipientCount: number): Promise<Newsletter> {
+    const n = this.newsletters.get(id);
+    if (!n || n.userId !== userId) throw new Error('Newsletter not found');
+    const updated: Newsletter = { ...n, status: 'sent', sentAt: new Date(), recipientCount, updatedAt: new Date() };
+    this.newsletters.set(id, updated);
+    return updated;
   }
 }
 

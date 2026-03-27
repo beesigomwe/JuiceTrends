@@ -465,3 +465,79 @@ export type SuggestionRunResult = {
   analysedPosts: number;
   generatedAt: string;
 };
+
+// ─── Newsletter Feature ───────────────────────────────────────────────────────
+
+// Subscriber status
+export const subscriberStatuses = ["active", "unsubscribed"] as const;
+export type SubscriberStatus = typeof subscriberStatuses[number];
+
+// Newsletter campaign status
+export const newsletterStatuses = ["draft", "scheduled", "sent"] as const;
+export type NewsletterStatus = typeof newsletterStatuses[number];
+
+// Newsletter Subscribers — people who have opted in to receive newsletters
+export const newsletterSubscribers = pgTable("newsletter_subscribers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),          // the JuiceTrends user who owns this list
+  email: text("email").notNull(),
+  name: text("name"),
+  status: text("status").notNull().$type<SubscriberStatus>().default("active"),
+  tags: text("tags").array(),
+  source: text("source").default("manual"),      // e.g. "manual", "import", "form"
+  subscribedAt: timestamp("subscribed_at").defaultNow(),
+  unsubscribedAt: timestamp("unsubscribed_at"),
+},
+(t) => ({
+  userEmailUnique: unique("newsletter_subscribers_user_email_key").on(t.userId, t.email),
+}));
+
+export const insertNewsletterSubscriberSchema = createInsertSchema(newsletterSubscribers).omit({
+  id: true,
+  subscribedAt: true,
+  unsubscribedAt: true,
+}).extend({
+  name: z.string().optional().nullable(),
+  tags: z.array(z.string()).optional().nullable(),
+  source: z.string().optional().nullable(),
+  status: z.enum(subscriberStatuses).optional(),
+});
+export type InsertNewsletterSubscriber = z.infer<typeof insertNewsletterSubscriberSchema>;
+export type NewsletterSubscriber = typeof newsletterSubscribers.$inferSelect;
+
+// Newsletter Campaigns — email campaigns composed and sent by users
+export const newsletters = pgTable("newsletters", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  subject: text("subject").notNull(),
+  previewText: text("preview_text"),
+  bodyHtml: text("body_html").notNull(),
+  bodyText: text("body_text"),
+  status: text("status").notNull().$type<NewsletterStatus>().default("draft"),
+  scheduledAt: timestamp("scheduled_at"),
+  sentAt: timestamp("sent_at"),
+  recipientCount: integer("recipient_count").default(0),
+  openCount: integer("open_count").default(0),
+  clickCount: integer("click_count").default(0),
+  tags: text("tags").array(),                    // filter subscribers by tag when sending
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertNewsletterSchema = createInsertSchema(newsletters).omit({
+  id: true,
+  sentAt: true,
+  recipientCount: true,
+  openCount: true,
+  clickCount: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  previewText: z.string().optional().nullable(),
+  bodyText: z.string().optional().nullable(),
+  scheduledAt: z.string().optional().nullable(),
+  tags: z.array(z.string()).optional().nullable(),
+  status: z.enum(newsletterStatuses).optional(),
+});
+export type InsertNewsletter = z.infer<typeof insertNewsletterSchema>;
+export type Newsletter = typeof newsletters.$inferSelect;
