@@ -25,6 +25,10 @@ function getSessionSecret(): string {
 }
 
 export function setupAuth(app: Express) {
+  // Trust Railway's TLS-terminating reverse proxy so that Express sees
+  // requests as HTTPS and sets the secure session cookie correctly.
+  app.set("trust proxy", 1);
+
   // Use PostgreSQL session store in production when DATABASE_URL is available
   const PgSession = connectPgSimple(session);
   const sessionStore =
@@ -45,6 +49,7 @@ export function setupAuth(app: Express) {
       cookie: {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
+        sameSite: "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       },
     }),
