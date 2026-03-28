@@ -51,6 +51,9 @@ export const socialAccounts = pgTable(
     isConnected: boolean("is_connected").default(true),
     followers: integer("followers").default(0),
     engagement: text("engagement").default("0%"),
+    // Meta Marketing API: stores the ad account ID (e.g. "act_123456789") so
+    // the publisher and insights sync can call the correct ad account endpoint.
+    adAccountId: text("ad_account_id"),
   },
   (t) => ({
     userPlatformUser: unique("social_accounts_user_platform_platform_user_key").on(

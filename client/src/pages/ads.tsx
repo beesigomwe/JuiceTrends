@@ -535,6 +535,20 @@ function CampaignDetail({ campaign }: { campaign: AdCampaignWithSets }) {
     onError: () => toast({ title: "Failed to publish campaign", variant: "destructive" }),
   });
 
+  const syncInsightsMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/ads/campaigns/${campaign.id}/sync-insights`).then((r) => r.json()),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["/api/ads/campaigns"] });
+      if (data.success) toast({ title: "Insights synced!", description: data.message });
+      else toast({ title: "Sync failed", description: data.error, variant: "destructive" });
+    },
+    onError: (err: any) => toast({
+      title: "Failed to sync insights",
+      description: err?.message ?? "Could not reach the Meta Insights API",
+      variant: "destructive",
+    }),
+  });
+
   // Build chart data from metrics
   const chartData = metrics.slice(-14).map((m) => ({
     date: new Date(m.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
@@ -568,9 +582,21 @@ function CampaignDetail({ campaign }: { campaign: AdCampaignWithSets }) {
         ))}
       </div>
 
-      {/* Publish button */}
+      {/* Action buttons */}
       {campaign.status !== "archived" && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {/* Sync Insights — only shown for published Facebook/Instagram campaigns */}
+          {campaign.platformCampaignId && ["facebook", "instagram"].includes(campaign.platform) && (
+            <Button
+              variant="outline"
+              onClick={() => syncInsightsMutation.mutate()}
+              disabled={syncInsightsMutation.isPending}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncInsightsMutation.isPending ? "animate-spin" : ""}`} />
+              {syncInsightsMutation.isPending ? "Syncing…" : "Sync Insights"}
+            </Button>
+          )}
           <Button onClick={() => publishMutation.mutate()} disabled={publishMutation.isPending} className="gap-2">
             <Zap className="h-4 w-4" />
             {publishMutation.isPending ? "Publishing…" : "Publish to Platform"}

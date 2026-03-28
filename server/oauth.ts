@@ -142,7 +142,7 @@ export function setupFacebookOAuth(app: Express) {
     const params = new URLSearchParams({
       client_id: process.env.META_APP_ID!,
       redirect_uri: `${getAppUrl()}/api/auth/facebook/callback`,
-      scope: "pages_manage_posts,pages_read_engagement,pages_show_list",
+      scope: "pages_manage_posts,pages_read_engagement,pages_show_list,ads_management,ads_read",
       state,
     });
 
@@ -229,6 +229,25 @@ export function setupFacebookOAuth(app: Express) {
             // ignore follower fetch failure; will be refreshed later
           }
 
+          // Fetch the user's ad accounts so we can store the first one
+          // against this page for use by the Marketing API publisher.
+          let adAccountId: string | null = null;
+          try {
+            const adAccountsRes = await axios.get(
+              `https://graph.facebook.com/${META_GRAPH_VERSION}/me/adaccounts`,
+              { params: { fields: "id,name,account_status", access_token } },
+            );
+            const adAccounts = adAccountsRes.data?.data ?? [];
+            // Prefer the first active account (account_status === 1)
+            const active = adAccounts.find((a: any) => a.account_status === 1) ?? adAccounts[0];
+            if (active) {
+              // The id returned is already in "act_XXXXXXX" format
+              adAccountId = active.id as string;
+            }
+          } catch {
+            // Non-fatal — user may not have an ad account yet
+          }
+
           await storage.createOrUpdateSocialAccount({
             userId,
             platform: "facebook",
@@ -241,6 +260,7 @@ export function setupFacebookOAuth(app: Express) {
             isConnected: true,
             followers,
             engagement: undefined,
+            adAccountId,
           });
         }
 

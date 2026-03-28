@@ -38,7 +38,10 @@ async function publishToFacebook(
   account: SocialAccount
 ): Promise<AdPublishResult> {
   const token = account.accessToken;
-  const adAccountId = account.platformUserId; // e.g. "act_123456789"
+  // Use the dedicated adAccountId (act_XXXXXXX) stored during OAuth.
+  // Fall back to platformUserId for legacy accounts that pre-date this field.
+  const adAccountId = (account as any).adAccountId ?? account.platformUserId;
+  const pageId = account.platformUserId; // The Facebook Page ID for the creative
   const baseUrl = `https://graph.facebook.com/v19.0/${adAccountId}`;
 
   try {
@@ -90,7 +93,7 @@ async function publishToFacebook(
       body: JSON.stringify({
         name: creative.name,
         object_story_spec: {
-          page_id: adAccountId,
+          page_id: pageId,
           link_data: {
             message: creative.bodyText ?? "",
             link: creative.destinationUrl ?? "https://example.com",

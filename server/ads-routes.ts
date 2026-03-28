@@ -338,6 +338,90 @@ export function setupAdsRoutes(app: Express): void {
     }
   });
 
+  // ─── Sync live insights from Facebook Marketing API ─────────────────────
+  // POST /api/ads/campaigns/:id/sync-insights
+  // Pulls the last 30 days of daily breakdowns from the Meta Insights API
+  // for this campaign and upserts them into the ad_metrics table.
+  app.post("/api/ads/campaigns/:id/sync-insights", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    try {
+      const campaign = await storage.getAdCampaign(req.params.id, userId);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      if (!campaign.platformCampaignId) {
+        return res.status(400).json({ error: "Campaign has not been published to a platform yet" });
+      }
+
+      // Resolve the connected Facebook/Instagram account
+      const accounts = await storage.getAccounts(userId);
+      const account = accounts.find((a) => a.platform === campaign.platform && a.isConnected);
+      if (!account?.accessToken) {
+        return res.status(400).json({ error: `No connected ${campaign.platform} account found` });
+      }
+
+      const META_VERSION = "v19.0";
+      const token = account.accessToken;
+      const platformCampaignId = campaign.platformCampaignId;
+
+      // Request daily breakdown for the last 30 days
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+      const until = new Date();
+
+      const params = new URLSearchParams({
+        access_token: token,
+        level: "campaign",
+        fields: "spend,impressions,reach,clicks,actions,ctr,cpm,cpc",
+        time_increment: "1",
+        time_range: JSON.stringify({
+          since: since.toISOString().split("T")[0],
+          until: until.toISOString().split("T")[0],
+        }),
+      });
+
+      const insightsRes = await fetch(
+        `https://graph.facebook.com/${META_VERSION}/${platformCampaignId}/insights?${params.toString()}`
+      );
+      if (!insightsRes.ok) {
+        const err = await insightsRes.json();
+        return res.status(502).json({ error: "Meta Insights API error", details: err });
+      }
+      const insightsJson = await insightsRes.json();
+      const rows: any[] = insightsJson.data ?? [];
+
+      let synced = 0;
+      for (const row of rows) {
+        const spendCents = Math.round(parseFloat(row.spend ?? "0") * 100);
+        const conversions = (row.actions ?? []).reduce((sum: number, a: any) =>
+          ["purchase", "lead", "complete_registration"].includes(a.action_type)
+            ? sum + parseInt(a.value ?? "0", 10)
+            : sum,
+          0
+        );
+        await storage.createAdMetric({
+          campaignId: campaign.id,
+          userId,
+          date: new Date(row.date_start),
+          spend: spendCents,
+          impressions: parseInt(row.impressions ?? "0", 10),
+          reach: parseInt(row.reach ?? "0", 10),
+          clicks: parseInt(row.clicks ?? "0", 10),
+          conversions,
+          ctr: row.ctr ?? "0",
+          cpm: row.cpm ?? "0",
+          cpc: row.cpc ?? "0",
+          roas: "0",
+        });
+        synced++;
+      }
+
+      res.json({ success: true, synced, message: `Synced ${synced} daily records from Meta Insights API` });
+    } catch (err) {
+      console.error("[ads] sync-insights error", err);
+      res.status(500).json({ error: "Failed to sync insights" });
+    }
+  });
+
   app.post("/api/ads/campaigns/:campaignId/metrics", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
