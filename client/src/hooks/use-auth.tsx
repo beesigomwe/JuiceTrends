@@ -43,8 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await apiRequest("POST", "/api/auth/login", data);
       return (await res.json()) as AuthUser;
     },
-    onSuccess: (nextUser) => {
-      queryClient.setQueryData(["/api/auth/me"], nextUser);
+    onSuccess: async () => {
+      // Invalidate and refetch /api/auth/me so the browser sends the newly
+      // committed session cookie before the redirect fires. Using setQueryData
+      // alone races against the browser persisting the Set-Cookie header.
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
   });
 
@@ -53,8 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await apiRequest("POST", "/api/auth/signup", data);
       return (await res.json()) as AuthUser;
     },
-    onSuccess: (nextUser) => {
-      queryClient.setQueryData(["/api/auth/me"], nextUser);
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
   });
 

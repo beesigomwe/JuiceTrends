@@ -16,7 +16,12 @@ function generatePKCE(): { codeVerifier: string; codeChallenge: string } {
 }
 
 function getAppUrl(): string {
-  return process.env.PUBLIC_URL || process.env.APP_URL || "";
+  // Prefer explicitly set APP_URL / PUBLIC_URL, then fall back to the
+  // Railway-injected RAILWAY_PUBLIC_DOMAIN (always present on Railway).
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : "";
+  return process.env.APP_URL || process.env.PUBLIC_URL || railwayDomain;
 }
 
 // ─── TWITTER / X ─────────────────────────────────────────────────────────────
