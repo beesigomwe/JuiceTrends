@@ -28,6 +28,8 @@ const TARGET_SCHEMA: Record<
     { name: "password", createDef: "TEXT NOT NULL", addDef: "TEXT NOT NULL" },
     { name: "email", createDef: "TEXT NOT NULL UNIQUE", addDef: "TEXT NOT NULL UNIQUE" },
     { name: "avatar", createDef: "TEXT", addDef: "TEXT" },
+    // Facebook OAuth — matches shared/schema.ts users.facebookId
+    { name: "facebook_id", createDef: "TEXT UNIQUE", addDef: "TEXT UNIQUE" },
     { name: "created_at", createDef: "TIMESTAMP DEFAULT NOW()", addDef: "TIMESTAMP DEFAULT NOW()" },
   ],
   social_accounts: [

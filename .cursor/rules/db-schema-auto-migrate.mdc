@@ -1,0 +1,26 @@
+---
+description: Keep shared/schema.ts and script/auto-migrate.ts TARGET_SCHEMA in sync
+globs:
+  - shared/schema.ts
+  - script/auto-migrate.ts
+alwaysApply: false
+---
+
+# Database schema and auto-migrate
+
+Production and deploy use **`script/auto-migrate.ts`**, not Drizzle Kit push. The `TARGET_SCHEMA` object is the source of truth for which tables/columns exist on Postgres.
+
+## When you change `shared/schema.ts`
+
+1. **New table** — Add a full entry under `TARGET_SCHEMA` in `script/auto-migrate.ts` with every column, in a sensible order (match `pgTable` fields). Include join/unique constraints in the `CREATE TABLE` branch where `auto-migrate` already does (e.g. `social_accounts` composite unique).
+2. **New column** — Add `{ name, createDef, addDef }` for that column on the existing table. Use snake_case `name` to match the DB column (e.g. `facebook_id` for `facebookId` in Drizzle).
+3. **`createDef`** — Used when the table is created from scratch (include `NOT NULL`, `DEFAULT`, `UNIQUE` as in Drizzle).
+4. **`addDef`** — Used for `ALTER TABLE ... ADD COLUMN` on existing DBs; must be valid for backfill (nullable or sensible default). Avoid breaking existing rows.
+
+## Why this matters
+
+If Drizzle defines a column that `TARGET_SCHEMA` never adds, inserts/seeds will fail at runtime with errors like `column "…" of relation "users" does not exist`.
+
+## After editing
+
+If possible, run `npm run db:auto-migrate` locally against a dev database to verify SQL applies cleanly.
