@@ -66,6 +66,8 @@ const TARGET_SCHEMA: Record<
     { name: "platform_metadata", createDef: "JSONB", addDef: "JSONB" },
     // Brands — optional brand association
     { name: "brand_id", createDef: "VARCHAR", addDef: "VARCHAR" },
+    // Per-platform target accounts (nullable TEXT[])
+    { name: "target_account_ids", createDef: "TEXT[]", addDef: "TEXT[]" },
   ],
   analytics_data: [
     { name: "id", createDef: "VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()", addDef: "VARCHAR DEFAULT gen_random_uuid()" },

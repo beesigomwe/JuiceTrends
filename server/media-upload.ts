@@ -12,7 +12,7 @@
 import path from "path";
 import fs from "fs";
 import multer from "multer";
-import type { Express, Request, Response } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import { requireAuth } from "./auth";
 
 // ---------------------------------------------------------------------------
@@ -74,9 +74,7 @@ export function setupMediaUpload(app: Express): void {
   });
 
   // Serve uploaded files from disk
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const expressModule = require("express") as typeof import("express");
-  app.use("/uploads", expressModule.static(UPLOAD_DIR));
+  app.use("/uploads", express.static(UPLOAD_DIR));
 
   app.post(
     "/api/media/upload",

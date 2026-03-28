@@ -65,7 +65,7 @@ export default function SignupPage() {
           <div className="text-center">
             <h1 className="text-2xl font-bold">Juice Trends</h1>
             <p className="text-sm text-muted-foreground">
-              Social media orchestration platform
+            The dream social media management platform for influencers and brands
             </p>
           </div>
         </div>

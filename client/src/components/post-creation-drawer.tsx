@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -40,6 +40,9 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { PlatformIcon, getPlatformName } from "./platform-icon";
 import {
   Sparkles,
@@ -54,7 +57,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import type { PlatformType, Post, BrandWithAccounts } from "@shared/schema";
+import type { PlatformType, Post, BrandWithAccounts, SocialAccount } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
 // ---------------------------------------------------------------------------
@@ -116,6 +119,7 @@ export interface PostCreationDrawerProps {
     status: "draft" | "scheduled";
     mediaUrls?: string[];
     brandId?: string | null;
+    targetAccountIds: string[] | null;
   }) => void;
   onPublishNow?: (postId: string) => void;
   editPost?: Post | null;
@@ -132,6 +136,29 @@ const availablePlatforms: PlatformType[] = [
   "youtube",
   "threads",
 ];
+
+function eligibleAccounts(
+  platform: PlatformType,
+  allAccounts: SocialAccount[],
+  brand: BrandWithAccounts | null,
+): SocialAccount[] {
+  let list = allAccounts.filter((a) => a.platform === platform && a.isConnected);
+  if (brand?.accounts.length) {
+    const ids = new Set(brand.accounts.map((a) => a.id));
+    list = list.filter((a) => ids.has(a.id));
+  }
+  return list;
+}
+
+function samePlatformTargets(
+  a: Partial<Record<PlatformType, string>>,
+  b: Partial<Record<PlatformType, string>>,
+): boolean {
+  const keysA = Object.keys(a) as PlatformType[];
+  const keysB = Object.keys(b) as PlatformType[];
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((k) => a[k] === b[k]);
+}
 
 export function PostCreationDrawer({
   open,
@@ -150,12 +177,20 @@ export function PostCreationDrawer({
     (editPost as any)?.brandId ?? null
   );
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
+  const [platformTargetByPlatform, setPlatformTargetByPlatform] = useState<
+    Partial<Record<PlatformType, string>>
+  >({});
+  const seedEditTargetsDoneRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // Fetch brands for the picker
   const { data: brands = [] } = useQuery<BrandWithAccounts[]>({
     queryKey: ["/api/brands"],
+  });
+
+  const { data: allAccounts = [] } = useQuery<SocialAccount[]>({
+    queryKey: ["/api/accounts"],
   });
 
   const form = useForm<PostFormValues>({
@@ -185,6 +220,76 @@ export function PostCreationDrawer({
   };
 
   const selectedBrand = brands.find((b) => b.id === selectedBrandId) ?? null;
+  const selectedPlatforms = form.watch("platforms") || [];
+
+  useEffect(() => {
+    seedEditTargetsDoneRef.current = false;
+  }, [editPost?.id]);
+
+  useEffect(() => {
+    if (!open) {
+      seedEditTargetsDoneRef.current = false;
+      setPlatformTargetByPlatform({});
+      return;
+    }
+    if (!allAccounts.length) return;
+
+    setPlatformTargetByPlatform((prev) => {
+      let next: Partial<Record<PlatformType, string>> = { ...prev };
+
+      if (editPost && !seedEditTargetsDoneRef.current) {
+        seedEditTargetsDoneRef.current = true;
+        next = {};
+        if (editPost.targetAccountIds?.length) {
+          for (const id of editPost.targetAccountIds) {
+            const acc = allAccounts.find((a) => a.id === id);
+            if (acc) next[acc.platform as PlatformType] = id;
+          }
+        }
+        const brandForPost =
+          editPost.brandId != null
+            ? brands.find((b) => b.id === editPost.brandId) ?? null
+            : null;
+        for (const platform of editPost.platforms) {
+          if (next[platform]) continue;
+          const elig = eligibleAccounts(platform, allAccounts, brandForPost);
+          if (elig[0]) next[platform] = elig[0].id;
+        }
+      }
+
+      const platforms = selectedPlatforms;
+      for (const platform of platforms) {
+        const elig = eligibleAccounts(platform, allAccounts, selectedBrand);
+        if (elig.length === 0) {
+          delete next[platform];
+          continue;
+        }
+        if (elig.length === 1) {
+          next[platform] = elig[0]!.id;
+          continue;
+        }
+        const cur = next[platform];
+        if (!cur || !elig.some((e) => e.id === cur)) {
+          delete next[platform];
+        }
+      }
+      for (const p of Object.keys(next) as PlatformType[]) {
+        if (!platforms.includes(p)) delete next[p];
+      }
+      if (samePlatformTargets(next, prev)) return prev;
+      return next;
+    });
+  }, [
+    open,
+    editPost?.id,
+    editPost?.targetAccountIds,
+    editPost?.platforms,
+    editPost?.brandId,
+    allAccounts,
+    brands,
+    selectedBrand,
+    selectedPlatforms,
+  ]);
 
   const handleSubmit = (values: PostFormValues, asDraft: boolean = false) => {
     let scheduledAt: Date | null = null;
@@ -202,14 +307,38 @@ export function PostCreationDrawer({
           .filter((tag) => tag.length > 0)
       : [];
 
+    const platforms = values.platforms as PlatformType[];
+    for (const platform of platforms) {
+      const elig = eligibleAccounts(platform, allAccounts, selectedBrand);
+      if (elig.length === 0) {
+        toast({
+          title: "Missing connection",
+          description: `Connect a ${getPlatformName(platform)} account (or add one to this brand) before posting.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    const targetAccountIds = platforms.map((p) => platformTargetByPlatform[p]).filter(Boolean) as string[];
+    if (targetAccountIds.length !== platforms.length) {
+      toast({
+        title: "Select accounts",
+        description: "Choose which account to use for each selected platform.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     onSubmit({
       content: values.content,
-      platforms: values.platforms as PlatformType[],
+      platforms,
       hashtags: normalizedHashtags,
       scheduledAt,
       status: asDraft ? "draft" : "scheduled",
       mediaUrls: uploadedMedia.map((m) => m.url),
       brandId: selectedBrandId,
+      targetAccountIds,
     });
   };
 
@@ -304,7 +433,6 @@ export function PostCreationDrawer({
   };
 
   const characterCount = form.watch("content")?.length || 0;
-  const selectedPlatforms = form.watch("platforms") || [];
 
   const charWarnings = selectedPlatforms
     .filter((p) => characterCount > PLATFORM_CHAR_LIMITS[p])
@@ -417,20 +545,10 @@ export function PostCreationDrawer({
                   </PopoverContent>
                 </Popover>
 
-                {/* Show brand accounts when selected */}
                 {selectedBrand && selectedBrand.accounts.length > 0 && (
-                  <div className="rounded-md border bg-muted/30 px-3 py-2 space-y-1">
-                    <p className="text-xs text-muted-foreground font-medium">
-                      Posting to these accounts:
-                    </p>
-                    {selectedBrand.accounts.map((account) => (
-                      <div key={account.id} className="flex items-center gap-2 text-xs">
-                        <PlatformIcon platform={account.platform as any} className="h-3 w-3" />
-                        <span className="font-medium">{account.accountName}</span>
-                        <span className="text-muted-foreground">@{account.accountHandle}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Only accounts linked to this brand appear when you pick each platform below.
+                  </p>
                 )}
               </div>
             )}
@@ -484,6 +602,96 @@ export function PostCreationDrawer({
                     ))}
                   </div>
                   <FormMessage />
+
+                  {selectedPlatforms.length > 0 && (
+                    <div className="space-y-3 mt-3">
+                      <p className="text-xs text-muted-foreground">
+                        Choose the profile or page to publish to for each platform.
+                      </p>
+                      {availablePlatforms
+                        .filter((p) => selectedPlatforms.includes(p))
+                        .map((platform) => {
+                          const elig = eligibleAccounts(platform, allAccounts, selectedBrand);
+                          const selectedId = platformTargetByPlatform[platform];
+                          if (elig.length === 0) {
+                            return (
+                              <Alert key={platform} variant="destructive" className="py-2">
+                                <AlertTriangle className="h-4 w-4" />
+                                <AlertDescription className="text-xs">
+                                  No connected {getPlatformName(platform)} account
+                                  {selectedBrand ? " for this brand" : ""}. Connect one in Accounts.
+                                </AlertDescription>
+                              </Alert>
+                            );
+                          }
+                          if (elig.length === 1) {
+                            const acc = elig[0]!;
+                            return (
+                              <Card key={platform} className="border-dashed">
+                                <CardContent className="py-3 px-3 flex flex-wrap items-center gap-2 text-sm">
+                                  <PlatformIcon platform={platform} className="h-4 w-4 shrink-0" />
+                                  <span className="text-muted-foreground">{getPlatformName(platform)}</span>
+                                  <span className="font-medium">→ {acc.accountName}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    @{acc.accountHandle}
+                                  </span>
+                                </CardContent>
+                              </Card>
+                            );
+                          }
+                          return (
+                            <Card key={platform}>
+                              <CardContent className="pt-4 pb-3 px-3 space-y-2">
+                                <div className="flex items-center gap-2 text-sm font-medium">
+                                  <PlatformIcon platform={platform} className="h-4 w-4" />
+                                  {getPlatformName(platform)}
+                                </div>
+                                <RadioGroup
+                                  value={selectedId ?? ""}
+                                  onValueChange={(id) =>
+                                    setPlatformTargetByPlatform((prev) => ({
+                                      ...prev,
+                                      [platform]: id,
+                                    }))
+                                  }
+                                  className="gap-2"
+                                >
+                                  {elig.map((acc) => (
+                                    <label
+                                      key={acc.id}
+                                      htmlFor={`${platform}-${acc.id}`}
+                                      className={cn(
+                                        "flex items-center gap-3 rounded-md border px-3 py-2 cursor-pointer transition-colors",
+                                        selectedId === acc.id
+                                          ? "border-primary bg-primary/5"
+                                          : "border-border hover:border-primary/50",
+                                      )}
+                                    >
+                                      <RadioGroupItem
+                                        value={acc.id}
+                                        id={`${platform}-${acc.id}`}
+                                      />
+                                      <Avatar className="h-8 w-8">
+                                        <AvatarImage src={acc.avatarUrl ?? undefined} />
+                                        <AvatarFallback className="text-xs">
+                                          {acc.accountName.slice(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium truncate">{acc.accountName}</p>
+                                        <p className="text-xs text-muted-foreground truncate">
+                                          @{acc.accountHandle}
+                                        </p>
+                                      </div>
+                                    </label>
+                                  ))}
+                                </RadioGroup>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                    </div>
+                  )}
                 </FormItem>
               )}
             />

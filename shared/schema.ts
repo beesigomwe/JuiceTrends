@@ -100,6 +100,8 @@ export const posts = pgTable("posts", {
   platformMetadata: jsonb("platform_metadata").$type<Record<string, Record<string, string>>>(),
   // Optional brand this post belongs to
   brandId: varchar("brand_id"),
+  // Explicit social_account ids to publish to (one per platform in platforms); null = legacy first-match
+  targetAccountIds: text("target_account_ids").array(),
 });
 
 export const insertPostSchema = createInsertSchema(posts).omit({
@@ -113,6 +115,7 @@ export const insertPostSchema = createInsertSchema(posts).omit({
   // brandId is optional and set separately
 }).extend({
   brandId: z.string().optional().nullable(),
+  targetAccountIds: z.array(z.string()).optional().nullable(),
 });
 
 export type InsertPost = z.infer<typeof insertPostSchema>;

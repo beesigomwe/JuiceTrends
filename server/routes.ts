@@ -5,6 +5,8 @@ import { insertPostSchema, insertSocialAccountSchema, type PlatformType } from "
 import { hashPassword, requireAuth, setupAuth } from "./auth";
 import { fetchAccountStats } from "./account-stats";
 import { publishPostToPlatform, type PublishResult } from "./publisher";
+import { resolveAccountForPlatform } from "./post-publish-resolve";
+import { validatePostTargetAccounts } from "./post-target-validation";
 import { setupMediaUpload } from "./media-upload";
 import { setupAiGenerate } from "./ai-generate";
 import { setupBrandsRoutes } from "./brands-routes";
@@ -176,10 +178,23 @@ export async function registerRoutes(
   app.post("/api/posts", requireAuth, async (req: Request, res) => {
     try {
       const userId = (req.user as any)?.id as string | undefined;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
       const validatedData = insertPostSchema.parse({
         ...req.body,
         userId,
       });
+      const targetCheck = await validatePostTargetAccounts(
+        storage,
+        userId,
+        validatedData.platforms as PlatformType[],
+        validatedData.targetAccountIds,
+        validatedData.brandId ?? null,
+      );
+      if (!targetCheck.ok) {
+        return res.status(400).json({ error: targetCheck.error });
+      }
       const post = await storage.createPost(validatedData);
       res.status(201).json(post);
     } catch (error: any) {
@@ -192,14 +207,40 @@ export async function registerRoutes(
 
   app.patch("/api/posts/:id", requireAuth, async (req: Request, res) => {
     try {
+      const userId = (req.user as any)?.id as string | undefined;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
       const existingPost = await storage.getPost(req.params.id);
       if (!existingPost) {
         return res.status(404).json({ error: "Post not found" });
       }
-      
+      if (existingPost.userId !== userId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
       const partialSchema = insertPostSchema.partial();
       const validatedData = partialSchema.parse(req.body);
-      
+
+      const effectivePlatforms = (validatedData.platforms ?? existingPost.platforms) as PlatformType[];
+      const effectiveTargets =
+        validatedData.targetAccountIds !== undefined
+          ? validatedData.targetAccountIds
+          : existingPost.targetAccountIds;
+      const effectiveBrandId =
+        validatedData.brandId !== undefined ? validatedData.brandId : existingPost.brandId;
+
+      const targetCheck = await validatePostTargetAccounts(
+        storage,
+        userId,
+        effectivePlatforms,
+        effectiveTargets,
+        effectiveBrandId ?? null,
+      );
+      if (!targetCheck.ok) {
+        return res.status(400).json({ error: targetCheck.error });
+      }
+
       const post = await storage.updatePost(req.params.id, validatedData as any);
       res.json(post);
     } catch (error: any) {
@@ -319,13 +360,13 @@ export async function registerRoutes(
       const results: Record<string, PublishResult> = {};
 
       for (const platform of platforms) {
-        const account = userAccounts.find(
-          (a) => a.platform === platform && a.isConnected
-        );
+        const account = resolveAccountForPlatform(post, platform, userAccounts);
         if (!account) {
           results[platform] = {
             success: false,
-            error: `No connected ${platform} account found.`,
+            error: post.targetAccountIds?.length
+              ? `No matching connected ${platform} account in this post's targets.`
+              : `No connected ${platform} account found.`,
           };
           continue;
         }

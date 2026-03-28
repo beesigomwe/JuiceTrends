@@ -18,6 +18,7 @@
 
 import type { IStorage } from "./storage";
 import { publishPostToPlatform, type PublishResult } from "./publisher";
+import { resolveAccountForPlatform } from "./post-publish-resolve";
 import type { PlatformType } from "@shared/schema";
 
 export async function runScheduler(storage: IStorage): Promise<void> {
@@ -43,14 +44,14 @@ export async function runScheduler(storage: IStorage): Promise<void> {
     const userAccounts = await storage.getAccounts(post.userId);
 
     for (const platform of platforms) {
-      const account = userAccounts.find(
-        (a) => a.platform === platform && a.isConnected
-      );
+      const account = resolveAccountForPlatform(post, platform, userAccounts);
 
       if (!account) {
         results[platform] = {
           success: false,
-          error: `No connected ${platform} account found for this user.`,
+          error: post.targetAccountIds?.length
+            ? `No matching connected ${platform} account in this post's targets.`
+            : `No connected ${platform} account found for this user.`,
         };
         continue;
       }

@@ -240,6 +240,7 @@ export class MemStorage implements IStorage {
         publishResults: null,
         platformMetadata: null,
         brandId: null,
+        targetAccountIds: null,
       },
       {
         id: randomUUID(),
@@ -259,6 +260,7 @@ export class MemStorage implements IStorage {
         publishResults: null,
         platformMetadata: null,
         brandId: null,
+        targetAccountIds: null,
       },
       {
         id: randomUUID(),
@@ -278,6 +280,7 @@ export class MemStorage implements IStorage {
         publishResults: null,
         platformMetadata: null,
         brandId: null,
+        targetAccountIds: null,
       },
       {
         id: randomUUID(),
@@ -297,6 +300,7 @@ export class MemStorage implements IStorage {
         publishResults: null,
         platformMetadata: null,
         brandId: null,
+        targetAccountIds: null,
       },
       {
         id: randomUUID(),
@@ -316,6 +320,7 @@ export class MemStorage implements IStorage {
         publishResults: null,
         platformMetadata: null,
         brandId: null,
+        targetAccountIds: null,
       },
       {
         id: randomUUID(),
@@ -335,6 +340,7 @@ export class MemStorage implements IStorage {
         publishResults: null,
         platformMetadata: null,
         brandId: null,
+        targetAccountIds: null,
       },
     ];
 
@@ -405,6 +411,7 @@ export class MemStorage implements IStorage {
       publishResults: null,
       platformMetadata: null,
       brandId: (insertPost as any).brandId ?? null,
+      targetAccountIds: insertPost.targetAccountIds ?? null,
     };
     this.posts.set(id, post);
     return post;
@@ -432,6 +439,9 @@ export class MemStorage implements IStorage {
       publishedAt: (updates as any).publishedAt !== undefined ? (updates as any).publishedAt : post.publishedAt,
       publishResults: (updates as any).publishResults !== undefined ? (updates as any).publishResults : (post as any).publishResults,
       platformMetadata: (updates as any).platformMetadata !== undefined ? (updates as any).platformMetadata : (post as any).platformMetadata,
+      brandId: updates.brandId !== undefined ? updates.brandId : post.brandId,
+      targetAccountIds:
+        updates.targetAccountIds !== undefined ? updates.targetAccountIds : post.targetAccountIds,
     };
     this.posts.set(id, updated);
     return updated;

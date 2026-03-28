@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,9 +33,29 @@ import {
   Area,
 } from "recharts";
 import type { DashboardStats, ChartDataPoint, Post, SocialAccount, SuggestedPost } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Dashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const createPostMutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/posts", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/posts/recent"] });
+      qc.invalidateQueries({ queryKey: ["/api/posts"] });
+      setDrawerOpen(false);
+      toast({ title: "Post saved successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save post", variant: "destructive" });
+    },
+  });
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/stats"],
@@ -53,8 +73,8 @@ export default function Dashboard() {
     queryKey: ["/api/accounts"],
   });
 
-  const handleCreatePost = async (data: any) => {
-    setDrawerOpen(false);
+  const handleCreatePost = async (data: Record<string, unknown>) => {
+    await createPostMutation.mutateAsync(data);
   };
 
   return (
@@ -361,6 +381,7 @@ export default function Dashboard() {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         onSubmit={handleCreatePost}
+        isLoading={createPostMutation.isPending}
       />
     </div>
   );

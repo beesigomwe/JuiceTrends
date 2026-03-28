@@ -133,6 +133,8 @@ export default function PostsPage() {
       hashtags: post.hashtags || [],
       scheduledAt: null,
       status: "draft",
+      brandId: post.brandId ?? null,
+      targetAccountIds: post.targetAccountIds ?? null,
     });
   };
 

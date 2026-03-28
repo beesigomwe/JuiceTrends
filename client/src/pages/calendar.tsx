@@ -80,11 +80,8 @@ export default function CalendarPage() {
     setDrawerOpen(true);
   };
 
-  const handleCreatePost = async (data: any) => {
-    await createPostMutation.mutateAsync({
-      ...data,
-      userId: "demo-user",
-    });
+  const handleCreatePost = async (data: Record<string, unknown>) => {
+    await createPostMutation.mutateAsync(data);
   };
 
   const scheduledCount = posts?.filter((p) => p.status === "scheduled").length || 0;
