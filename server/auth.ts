@@ -66,6 +66,9 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Invalid email or password" });
         }
 
+        if (!user.password) {
+          return done(null, false, { message: "Invalid email or password" });
+        }
         const isValid = await comparePassword(password, user.password);
         if (!isValid) {
           return done(null, false, { message: "Invalid email or password" });

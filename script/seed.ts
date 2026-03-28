@@ -1,6 +1,4 @@
 import "dotenv/config";
-import { execSync } from "child_process";
-import { resolve } from "path";
 import bcrypt from "bcrypt";
 import { getDb } from "../server/db";
 import { users } from "../shared/schema";
@@ -24,16 +22,14 @@ function isSeedUsersEnabled(): boolean {
 }
 
 async function main() {
-  const databaseUrl = requireEnv("DATABASE_URL");
+  requireEnv("DATABASE_URL");
+
+  // Schema is managed by auto-migrate.ts which runs before this script in the
+  // Railway build command. We do NOT call drizzle-kit push here because it is
+  // interactive and will fail when the remote DB has tables that differ from
+  // the local schema (e.g. tables from a previous deployment attempt).
+
   const seedUsers = isSeedUsersEnabled();
-
-  console.log("Pushing schema...");
-  execSync("npx drizzle-kit push", {
-    stdio: "inherit",
-    cwd: resolve(process.cwd()),
-    env: { ...process.env, DATABASE_URL: databaseUrl },
-  });
-
   if (!seedUsers) {
     console.log("SEED_USERS is false; skipping user account creation.");
     return;

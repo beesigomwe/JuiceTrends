@@ -52,7 +52,7 @@ export async function validatePostTargetAccounts(
   }
 
   const selectedPlatforms = new Set(selected.map((a) => a.platform));
-  if (selectedPlatforms.size !== uniqPlatforms.size || ![...uniqPlatforms].every((p) => selectedPlatforms.has(p))) {
+  if (selectedPlatforms.size !== uniqPlatforms.size || !Array.from(uniqPlatforms).every((p) => selectedPlatforms.has(p))) {
     return { ok: false, error: "Target accounts must match selected platforms" };
   }
 

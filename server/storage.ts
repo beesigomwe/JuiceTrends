@@ -152,6 +152,7 @@ export class MemStorage implements IStorage {
       password: "hashed_password",
       email: "maya@company.com",
       avatar: null,
+      facebookId: null,
       createdAt: new Date(),
     });
 
@@ -171,6 +172,7 @@ export class MemStorage implements IStorage {
         isConnected: true,
         followers: 24500,
         engagement: "4.2%",
+        adAccountId: null,
       },
       {
         id: randomUUID(),
@@ -186,6 +188,7 @@ export class MemStorage implements IStorage {
         isConnected: true,
         followers: 18200,
         engagement: "2.8%",
+        adAccountId: null,
       },
       {
         id: randomUUID(),
@@ -201,6 +204,7 @@ export class MemStorage implements IStorage {
         isConnected: true,
         followers: 12800,
         engagement: "5.1%",
+        adAccountId: null,
       },
       {
         id: randomUUID(),
@@ -216,6 +220,7 @@ export class MemStorage implements IStorage {
         isConnected: true,
         followers: 35600,
         engagement: "3.5%",
+        adAccountId: null,
       },
     ];
 
@@ -368,7 +373,9 @@ export class MemStorage implements IStorage {
     const user: User = {
       ...insertUser,
       id,
+      password: insertUser.password ?? null,
       avatar: insertUser.avatar ?? null,
+      facebookId: insertUser.facebookId ?? null,
       createdAt: new Date(),
     };
     this.users.set(id, user);
@@ -484,6 +491,7 @@ export class MemStorage implements IStorage {
       isConnected: insertAccount.isConnected ?? true,
       followers: insertAccount.followers ?? 0,
       engagement: insertAccount.engagement ?? "0%",
+      adAccountId: insertAccount.adAccountId ?? null,
     };
     this.accounts.set(id, account);
     return account;
