@@ -22,6 +22,8 @@ import AdsPage from "@/pages/ads";
 import NewsletterPage from "@/pages/newsletter";
 import LoginPage from "@/pages/login";
 import SignupPage from "@/pages/signup";
+import PrivacyPage from "@/pages/privacy";
+import TermsPage from "@/pages/terms";
 import { ProtectedRoute } from "@/components/protected-route";
 import { AuthProvider } from "@/hooks/use-auth.tsx";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -89,6 +91,8 @@ function AppRouter() {
     <Switch>
       <Route path="/login" component={LoginPage} />
       <Route path="/signup" component={SignupPage} />
+      <Route path="/privacy" component={PrivacyPage} />
+      <Route path="/terms" component={TermsPage} />
       <Route>
         <ProtectedRoute>
           <AuthedAppLayout />

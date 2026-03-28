@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { Zap, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -13,6 +13,26 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+// Facebook brand icon as an inline SVG to avoid adding an icon library dependency
+function FacebookIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-5 w-5"
+      aria-hidden="true"
+    >
+      <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.883v2.252h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z" />
+    </svg>
+  );
+}
+
+const SSO_ERROR_MESSAGES: Record<string, string> = {
+  facebook_sso: "Facebook sign-in failed. Please try again or use email and password.",
+  invalid_state: "Security check failed. Please try signing in again.",
+};
+
 export default function LoginPage() {
   const [, setLocation] = useLocation();
   const { login, isLoggingIn } = useAuth();
@@ -20,6 +40,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Show SSO errors passed as query params (e.g. ?error=facebook_sso)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errorKey = params.get("error");
+    if (errorKey && SSO_ERROR_MESSAGES[errorKey]) {
+      setError(SSO_ERROR_MESSAGES[errorKey]);
+    }
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -30,6 +59,11 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(err?.message || "Invalid email or password");
     }
+  };
+
+  const handleFacebookSSO = () => {
+    // Full-page redirect to the server-side Facebook OAuth initiation route
+    window.location.href = "/api/auth/facebook/sso";
   };
 
   return (
@@ -54,13 +88,38 @@ export default function LoginPage() {
               Sign in to your account to continue
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {error && (
+              <div className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            {/* Facebook SSO */}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-2 border-[#1877F2] text-[#1877F2] hover:bg-[#1877F2]/5"
+              onClick={handleFacebookSSO}
+            >
+              <FacebookIcon />
+              Continue with Facebook
+            </Button>
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  or sign in with email
+                </span>
+              </div>
+            </div>
+
+            {/* Email / password form */}
             <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
-                <div className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-                  {error}
-                </div>
-              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -103,7 +162,7 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-6 text-center text-sm text-muted-foreground">
+            <div className="text-center text-sm text-muted-foreground">
               Don&apos;t have an account?{" "}
               <Link
                 href="/signup"
@@ -118,4 +177,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

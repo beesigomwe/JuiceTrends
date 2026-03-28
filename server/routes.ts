@@ -43,6 +43,103 @@ export async function registerRoutes(
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // ─── Meta Webhook Verification (Instagram / Facebook) ──────────────────────
+  // Meta sends a GET request with hub.mode, hub.verify_token, and hub.challenge
+  // when you register a webhook callback URL in the developer console.
+  // We must echo back hub.challenge to confirm ownership of the endpoint.
+  app.get("/api/webhooks/instagram", (req, res) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+    const verifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+    if (mode === "subscribe" && token === verifyToken) {
+      console.log("[webhook] Instagram webhook verified successfully");
+      return res.status(200).send(challenge);
+    }
+    console.warn("[webhook] Instagram webhook verification failed — token mismatch");
+    return res.sendStatus(403);
+  });
+
+  // Receive Instagram webhook event payloads (POST)
+  app.post("/api/webhooks/instagram", (req, res) => {
+    // Acknowledge receipt immediately; process asynchronously if needed
+    res.sendStatus(200);
+  });
+
+  // ─── Facebook SSO ───────────────────────────────────────────────────────────
+  // Initiates Facebook Login for authentication (not page management).
+  // Requests only the minimum scopes needed to identify the user.
+  app.get("/api/auth/facebook/sso", (req, res) => {
+    const crypto = require("crypto");
+    const state = crypto.randomBytes(24).toString("base64url");
+    (req.session as any).facebookSsoState = state;
+    const params = new URLSearchParams({
+      client_id: process.env.META_APP_ID || "",
+      redirect_uri: `${process.env.APP_URL || ""}/api/auth/facebook/sso/callback`,
+      scope: "email,public_profile",
+      response_type: "code",
+      state,
+    });
+    res.redirect(`https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`);
+  });
+
+  app.get("/api/auth/facebook/sso/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query as Record<string, string>;
+      const sessionState = (req.session as any).facebookSsoState;
+      if (!state || state !== sessionState) {
+        return res.redirect("/login?error=invalid_state");
+      }
+      delete (req.session as any).facebookSsoState;
+
+      if (!code) return res.redirect("/login?error=facebook_sso");
+
+      // Exchange code for access token
+      const axios = require("axios");
+      const tokenRes = await axios.get("https://graph.facebook.com/v21.0/oauth/access_token", {
+        params: {
+          client_id: process.env.META_APP_ID,
+          client_secret: process.env.META_APP_SECRET,
+          redirect_uri: `${process.env.APP_URL || ""}/api/auth/facebook/sso/callback`,
+          code,
+        },
+      });
+      const { access_token } = tokenRes.data;
+
+      // Fetch user profile
+      const profileRes = await axios.get("https://graph.facebook.com/v21.0/me", {
+        params: { fields: "id,name,email,picture", access_token },
+      });
+      const profile = profileRes.data;
+
+      // Find or create user
+      let user = await storage.getUserByEmail(profile.email);
+      if (!user) {
+        // New user — create account via Facebook SSO
+        const username = (profile.email as string).split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+        user = await storage.createUser({
+          name: profile.name,
+          email: profile.email,
+          username,
+          avatar: profile.picture?.data?.url ?? null,
+          facebookId: profile.id,
+        });
+      } else if (!(user as any).facebookId) {
+        // Existing email user — link their Facebook ID
+        // (handled gracefully; no update needed for login to succeed)
+      }
+
+      const { password: _pw, ...safeUser } = user as any;
+      req.login(safeUser, (err) => {
+        if (err) return res.redirect("/login?error=facebook_sso");
+        res.redirect("/");
+      });
+    } catch (error) {
+      console.error("Facebook SSO error:", error);
+      res.redirect("/login?error=facebook_sso");
+    }
+  });
+
   // Social platform OAuth flows
   setupTwitterOAuth(app);
   setupFacebookOAuth(app);

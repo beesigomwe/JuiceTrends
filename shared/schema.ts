@@ -8,9 +8,12 @@ export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  // Nullable to support OAuth-only users who have no password
+  password: text("password"),
   email: text("email").notNull().unique(),
   avatar: text("avatar"),
+  // Facebook SSO: stores the Facebook user ID for OAuth login
+  facebookId: text("facebook_id").unique(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -20,7 +23,8 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
   email: true,
   avatar: true,
-});
+  facebookId: true,
+}).partial({ password: true, facebookId: true });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
