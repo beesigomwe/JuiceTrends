@@ -101,13 +101,14 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5173", 10);
+  const host = process.env.HOST || "0.0.0.0";
   httpServer.listen(
     {
       port,
-      host: "127.0.0.1",
+      host,
     },
     () => {
-      log(`serving on port ${port}`);
+      log(`serving on port ${port} (host: ${host})`);
       const REFRESH_INTERVAL_MS = 60 * 60 * 1000;
       setInterval(() => {
         runTokenRefresh(storage).catch((err) => {
