@@ -51,7 +51,8 @@ export async function registerRoutes(
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
-    const verifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+    const verifyToken =
+      process.env.INSTAGRAM_VERIFY_TOKEN || process.env.WEBHOOK_VERIFY_TOKEN;
     if (mode === "subscribe" && token === verifyToken) {
       console.log("[webhook] Instagram webhook verified successfully");
       return res.status(200).send(challenge);

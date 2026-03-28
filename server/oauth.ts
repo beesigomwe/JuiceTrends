@@ -24,6 +24,16 @@ function getAppUrl(): string {
   return process.env.APP_URL || process.env.PUBLIC_URL || railwayDomain;
 }
 
+/**
+ * Full OAuth redirect URI for a provider dashboard. When unset, uses APP_URL + callbackPath.
+ * Must match the callback URL registered with each provider exactly.
+ */
+function getOAuthRedirectUri(envVar: string, callbackPath: string): string {
+  const explicit = process.env[envVar]?.trim();
+  if (explicit) return explicit;
+  return `${getAppUrl()}${callbackPath}`;
+}
+
 // ─── TWITTER / X ─────────────────────────────────────────────────────────────
 
 export function setupTwitterOAuth(app: Express) {
@@ -36,7 +46,7 @@ export function setupTwitterOAuth(app: Express) {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: process.env.TWITTER_CLIENT_ID!,
-      redirect_uri: `${getAppUrl()}/api/auth/twitter/callback`,
+      redirect_uri: getOAuthRedirectUri("TWITTER_CALLBACK_URL", "/api/auth/twitter/callback"),
       scope: "tweet.read tweet.write users.read offline.access",
       state,
       code_challenge: codeChallenge,
@@ -73,7 +83,7 @@ export function setupTwitterOAuth(app: Express) {
           new URLSearchParams({
             grant_type: "authorization_code",
             code: code as string,
-            redirect_uri: `${getAppUrl()}/api/auth/twitter/callback`,
+            redirect_uri: getOAuthRedirectUri("TWITTER_CALLBACK_URL", "/api/auth/twitter/callback"),
             code_verifier: codeVerifier,
           }),
           {
@@ -141,7 +151,7 @@ export function setupFacebookOAuth(app: Express) {
 
     const params = new URLSearchParams({
       client_id: process.env.META_APP_ID!,
-      redirect_uri: `${getAppUrl()}/api/auth/facebook/callback`,
+      redirect_uri: getOAuthRedirectUri("FACEBOOK_CALLBACK_URL", "/api/auth/facebook/callback"),
       scope: "pages_manage_posts,pages_read_engagement,pages_show_list,ads_management,ads_read",
       state,
     });
@@ -173,7 +183,7 @@ export function setupFacebookOAuth(app: Express) {
             params: {
               client_id: process.env.META_APP_ID,
               client_secret: process.env.META_APP_SECRET,
-              redirect_uri: `${getAppUrl()}/api/auth/facebook/callback`,
+              redirect_uri: getOAuthRedirectUri("FACEBOOK_CALLBACK_URL", "/api/auth/facebook/callback"),
               code,
             },
           },
@@ -283,7 +293,7 @@ export function setupInstagramOAuth(app: Express) {
 
     const params = new URLSearchParams({
       client_id: process.env.META_APP_ID!,
-      redirect_uri: `${getAppUrl()}/api/auth/instagram/callback`,
+      redirect_uri: getOAuthRedirectUri("INSTAGRAM_CALLBACK_URL", "/api/auth/instagram/callback"),
       scope: "instagram_basic,instagram_content_publish,pages_show_list",
       response_type: "code",
       state,
@@ -316,7 +326,7 @@ export function setupInstagramOAuth(app: Express) {
             params: {
               client_id: process.env.META_APP_ID,
               client_secret: process.env.META_APP_SECRET,
-              redirect_uri: `${getAppUrl()}/api/auth/instagram/callback`,
+              redirect_uri: getOAuthRedirectUri("INSTAGRAM_CALLBACK_URL", "/api/auth/instagram/callback"),
               code: code as string,
             },
           },
@@ -400,7 +410,7 @@ export function setupLinkedInOAuth(app: Express) {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: process.env.LINKEDIN_CLIENT_ID!,
-      redirect_uri: `${getAppUrl()}/api/auth/linkedin/callback`,
+      redirect_uri: getOAuthRedirectUri("LINKEDIN_CALLBACK_URL", "/api/auth/linkedin/callback"),
       scope: "openid profile email w_member_social",
       state,
     });
@@ -431,7 +441,7 @@ export function setupLinkedInOAuth(app: Express) {
           new URLSearchParams({
             grant_type: "authorization_code",
             code: code as string,
-            redirect_uri: `${getAppUrl()}/api/auth/linkedin/callback`,
+            redirect_uri: getOAuthRedirectUri("LINKEDIN_CALLBACK_URL", "/api/auth/linkedin/callback"),
             client_id: process.env.LINKEDIN_CLIENT_ID!,
             client_secret: process.env.LINKEDIN_CLIENT_SECRET!,
           }),
@@ -498,7 +508,7 @@ export function setupTikTokOAuth(app: Express) {
       client_key: process.env.TIKTOK_CLIENT_KEY!,
       response_type: "code",
       scope: "user.info.basic,user.info.profile,video.upload,video.publish",
-      redirect_uri: `${getAppUrl()}/api/auth/tiktok/callback`,
+      redirect_uri: getOAuthRedirectUri("TIKTOK_CALLBACK_URL", "/api/auth/tiktok/callback"),
       state,
     });
 
@@ -530,7 +540,7 @@ export function setupTikTokOAuth(app: Express) {
             client_secret: process.env.TIKTOK_CLIENT_SECRET!,
             code: code as string,
             grant_type: "authorization_code",
-            redirect_uri: `${getAppUrl()}/api/auth/tiktok/callback`,
+            redirect_uri: getOAuthRedirectUri("TIKTOK_CALLBACK_URL", "/api/auth/tiktok/callback"),
           }),
           {
             headers: {
@@ -598,7 +608,7 @@ export function setupPinterestOAuth(app: Express) {
 
     const params = new URLSearchParams({
       client_id: process.env.PINTEREST_APP_ID!,
-      redirect_uri: `${getAppUrl()}/api/auth/pinterest/callback`,
+      redirect_uri: getOAuthRedirectUri("PINTEREST_CALLBACK_URL", "/api/auth/pinterest/callback"),
       response_type: "code",
       scope: "user_accounts:read,boards:read,boards:write",
       state,
@@ -628,7 +638,7 @@ export function setupPinterestOAuth(app: Express) {
           new URLSearchParams({
             grant_type: "authorization_code",
             code: code as string,
-            redirect_uri: `${getAppUrl()}/api/auth/pinterest/callback`,
+            redirect_uri: getOAuthRedirectUri("PINTEREST_CALLBACK_URL", "/api/auth/pinterest/callback"),
           }),
           {
             headers: {
@@ -694,7 +704,7 @@ export function setupYouTubeOAuth(app: Express) {
 
     const params = new URLSearchParams({
       client_id: process.env.GOOGLE_CLIENT_ID!,
-      redirect_uri: `${getAppUrl()}/api/auth/youtube/callback`,
+      redirect_uri: getOAuthRedirectUri("YOUTUBE_CALLBACK_URL", "/api/auth/youtube/callback"),
       response_type: "code",
       scope: YOUTUBE_SCOPES,
       access_type: "offline",
@@ -727,7 +737,7 @@ export function setupYouTubeOAuth(app: Express) {
             code: code as string,
             client_id: process.env.GOOGLE_CLIENT_ID!,
             client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-            redirect_uri: `${getAppUrl()}/api/auth/youtube/callback`,
+            redirect_uri: getOAuthRedirectUri("YOUTUBE_CALLBACK_URL", "/api/auth/youtube/callback"),
             grant_type: "authorization_code",
           }),
           { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
@@ -801,7 +811,7 @@ export function setupThreadsOAuth(app: Express) {
 
     const params = new URLSearchParams({
       client_id: process.env.THREADS_APP_ID!,
-      redirect_uri: `${getAppUrl()}/api/auth/threads/callback`,
+      redirect_uri: getOAuthRedirectUri("THREADS_CALLBACK_URL", "/api/auth/threads/callback"),
       scope: "threads_basic,threads_content_publish,threads_manage_replies",
       response_type: "code",
       state,
@@ -833,7 +843,7 @@ export function setupThreadsOAuth(app: Express) {
             client_id: process.env.THREADS_APP_ID!,
             client_secret: process.env.THREADS_APP_SECRET!,
             grant_type: "authorization_code",
-            redirect_uri: `${getAppUrl()}/api/auth/threads/callback`,
+            redirect_uri: getOAuthRedirectUri("THREADS_CALLBACK_URL", "/api/auth/threads/callback"),
             code: code as string,
           }),
           { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
