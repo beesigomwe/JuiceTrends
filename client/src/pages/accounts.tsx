@@ -29,12 +29,19 @@ import {
   XCircle,
   Users,
   TrendingUp,
+  Lock,
 } from "lucide-react";
 import type { SocialAccount, PlatformType } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { useSearch } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { useSubscription } from "@/hooks/use-subscription";
+import {
+  AccountActivationGate,
+  FreePlanAccountBanner,
+  useActiveAccount,
+} from "@/components/account-activation-gate";
 
 const availablePlatforms: { platform: PlatformType; description: string }[] = [
   { platform: "facebook", description: "Connect your Facebook Page" },
@@ -53,17 +60,17 @@ export default function AccountsPage() {
   const queryClient = useQueryClient();
   const search = useSearch();
   const { toast } = useToast();
+  const { isPro, openPaywall } = useSubscription();
 
   const { data: accounts, isLoading } = useQuery<SocialAccount[]>({
     queryKey: ["/api/accounts"],
   });
 
+  const { isAccountActive, activateAccount, activeAccountId } = useActiveAccount(accounts);
+
   const connectMutation = useMutation({
     mutationFn: async (platform: PlatformType) => {
-      // Kept for potential future manual connections; currently unused.
-      return apiRequest("POST", "/api/accounts", {
-        platform,
-      });
+      return apiRequest("POST", "/api/accounts", { platform });
     },
   });
 
@@ -87,6 +94,7 @@ export default function AccountsPage() {
 
   const connectedPlatforms = accounts?.map((a) => a.platform) || [];
   const totalFollowers = accounts?.reduce((sum, a) => sum + (a.followers || 0), 0) || 0;
+  const activeAccount = accounts?.find((a) => a.id === activeAccountId);
 
   const handleConnect = (platform: PlatformType) => {
     setConnectingPlatform(platform);
@@ -101,9 +109,7 @@ export default function AccountsPage() {
     const error = params.get("error");
 
     if (connected) {
-      toast({
-        title: `${connected} connected successfully!`,
-      });
+      toast({ title: `${connected} connected successfully!` });
       window.history.replaceState({}, "", "/accounts");
     }
 
@@ -117,19 +123,29 @@ export default function AccountsPage() {
         invalid_state: "Invalid or expired connection request. Please try again.",
       };
       const message = errorMessages[error] ?? `Failed to connect ${error}`;
-      toast({
-        title: message,
-        variant: "destructive",
-      });
+      toast({ title: message, variant: "destructive" });
       window.history.replaceState({}, "", "/accounts");
     }
   }, [search, toast]);
 
   return (
     <div className="space-y-6">
+      {/* Account Activation Gate – shown automatically for free plan users with >1 account */}
+      {accounts && accounts.length > 1 && (
+        <AccountActivationGate
+          accounts={accounts}
+          onConfirm={(id) => {
+            activateAccount(id);
+            queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+          }}
+        />
+      )}
+
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Connected Accounts</h1>
+          <h1 className="text-2xl font-bold" data-testid="text-page-title">
+            Connected Accounts
+          </h1>
           <p className="text-muted-foreground">
             Manage your social media platform connections.
           </p>
@@ -146,6 +162,11 @@ export default function AccountsPage() {
               <DialogTitle>Connect a Social Account</DialogTitle>
               <DialogDescription>
                 Choose a platform to connect your account, refresh access, or add new pages/channels.
+                {!isPro && (
+                  <span className="block mt-1 text-amber-600 dark:text-amber-400">
+                    Free plan: you can connect multiple accounts, but only one will be active at a time.
+                  </span>
+                )}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-3 py-4">
@@ -189,6 +210,15 @@ export default function AccountsPage() {
         </Dialog>
       </div>
 
+      {/* Free plan banner */}
+      {accounts && (
+        <FreePlanAccountBanner
+          totalAccounts={accounts.length}
+          activeAccountName={activeAccount?.accountName}
+        />
+      )}
+
+      {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
@@ -203,7 +233,9 @@ export default function AccountsPage() {
             <div className="text-2xl font-bold font-mono" data-testid="text-connected-count">
               {accounts?.length || 0}
             </div>
-            <p className="text-xs text-muted-foreground">of 7 available</p>
+            <p className="text-xs text-muted-foreground">
+              {isPro ? "unlimited available" : `1 active on free plan`}
+            </p>
           </CardContent>
         </Card>
 
@@ -250,6 +282,7 @@ export default function AccountsPage() {
         </Card>
       </div>
 
+      {/* Account cards */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Your Connected Accounts</h2>
 
@@ -267,108 +300,186 @@ export default function AccountsPage() {
           </div>
         ) : accounts && accounts.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {accounts.map((account) => (
-              <Card key={account.id} className="hover-elevate" data-testid={`card-account-${account.id}`}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-12 w-12">
-                        <AvatarImage src={account.avatarUrl || ""} />
-                        <AvatarFallback className="bg-muted">
-                          <PlatformIcon platform={account.platform} className="h-6 w-6" />
-                        </AvatarFallback>
-                      </Avatar>
+            {accounts.map((account) => {
+              const active = isAccountActive(account.id);
+              return (
+                <Card
+                  key={account.id}
+                  className={cn(
+                    "hover-elevate transition-all",
+                    !active && "opacity-60 grayscale",
+                  )}
+                  data-testid={`card-account-${account.id}`}
+                >
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage src={account.avatarUrl || ""} />
+                          <AvatarFallback className="bg-muted">
+                            <PlatformIcon platform={account.platform} className="h-6 w-6" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium">{account.accountName}</p>
+                          <p className="text-sm text-muted-foreground">
+                            @{account.accountHandle}
+                          </p>
+                        </div>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            data-testid={`button-account-menu-${account.id}`}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {!isPro && !active && (
+                            <DropdownMenuItem
+                              onClick={() => activateAccount(account.id)}
+                              data-testid="menu-activate-account"
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                              Set as Active Account
+                            </DropdownMenuItem>
+                          )}
+                          {!isPro && !active && (
+                            <DropdownMenuItem
+                              onClick={openPaywall}
+                              data-testid="menu-upgrade-for-account"
+                            >
+                              <Lock className="h-4 w-4 mr-2 text-primary" />
+                              Upgrade to Activate
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={() => refreshMutation.mutate(account.id)}
+                            data-testid="menu-refresh-account"
+                          >
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Refresh Data
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => disconnectMutation.mutate(account.id)}
+                            className="text-red-600"
+                            data-testid="menu-disconnect-account"
+                          >
+                            <Unlink className="h-4 w-4 mr-2" />
+                            Disconnect
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+                      {/* Active / Inactive badge for free users */}
+                      {!isPro && accounts.length > 1 && (
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            active
+                              ? "bg-primary/10 text-primary"
+                              : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {active ? (
+                            <>
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Active
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="h-3 w-3 mr-1" />
+                              Inactive
+                            </>
+                          )}
+                        </Badge>
+                      )}
+
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          account.isConnected
+                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                            : "bg-red-500/10 text-red-600 dark:text-red-400"
+                        )}
+                      >
+                        {account.isConnected ? (
+                          <>
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Connected
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Disconnected
+                          </>
+                        )}
+                      </Badge>
+                      <PlatformIcon platform={account.platform} className="h-5 w-5" />
+                    </div>
+
+                    {!account.isConnected && (
+                      <div className="mb-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleConnect(account.platform)}
+                          disabled={connectingPlatform !== null}
+                          data-testid="button-reconnect-account"
+                        >
+                          <RefreshCw className="h-3 w-3 mr-2" />
+                          Reconnect
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Inactive overlay CTA for free plan */}
+                    {!isPro && !active && accounts.length > 1 && (
+                      <div className="mb-4 flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs"
+                          onClick={() => activateAccount(account.id)}
+                          data-testid={`button-activate-${account.id}`}
+                        >
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Activate
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs text-primary border-primary/30"
+                          onClick={openPaywall}
+                          data-testid={`button-upgrade-for-${account.id}`}
+                        >
+                          <Lock className="h-3 w-3 mr-1" />
+                          Upgrade
+                        </Button>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4 pt-4 border-t">
                       <div>
-                        <p className="font-medium">{account.accountName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          @{account.accountHandle}
+                        <p className="text-2xl font-bold font-mono">
+                          {account.followers?.toLocaleString()}
                         </p>
+                        <p className="text-xs text-muted-foreground">Followers</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold font-mono">{account.engagement}</p>
+                        <p className="text-xs text-muted-foreground">Engagement</p>
                       </div>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          data-testid={`button-account-menu-${account.id}`}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => refreshMutation.mutate(account.id)}
-                          data-testid="menu-refresh-account"
-                        >
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          Refresh Data
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => disconnectMutation.mutate(account.id)}
-                          className="text-red-600"
-                          data-testid="menu-disconnect-account"
-                        >
-                          <Unlink className="h-4 w-4 mr-2" />
-                          Disconnect
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-
-                  <div className="flex items-center justify-between mb-4">
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        account.isConnected
-                          ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                          : "bg-red-500/10 text-red-600 dark:text-red-400"
-                      )}
-                    >
-                      {account.isConnected ? (
-                        <>
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Connected
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Disconnected
-                        </>
-                      )}
-                    </Badge>
-                    <PlatformIcon platform={account.platform} className="h-5 w-5" />
-                  </div>
-
-                  {!account.isConnected && (
-                    <div className="mb-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleConnect(account.platform)}
-                        disabled={connectingPlatform !== null}
-                        data-testid="button-reconnect-account"
-                      >
-                        <RefreshCw className="h-3 w-3 mr-2" />
-                        Reconnect
-                      </Button>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-                    <div>
-                      <p className="text-2xl font-bold font-mono">
-                        {account.followers?.toLocaleString()}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Followers</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold font-mono">{account.engagement}</p>
-                      <p className="text-xs text-muted-foreground">Engagement</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         ) : (
           <Card>

@@ -26,6 +26,8 @@ import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
 import { ProtectedRoute } from "@/components/protected-route";
 import { AuthProvider } from "@/hooks/use-auth.tsx";
+import { SubscriptionProvider } from "@/hooks/use-subscription";
+import { PaywallModal } from "@/components/paywall-modal";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 function AuthedRoutes() {
@@ -82,6 +84,9 @@ function AuthedAppLayout() {
           </main>
         </div>
       </div>
+
+      {/* Global paywall modal – rendered once at the app shell level */}
+      <PaywallModal />
     </SidebarProvider>
   );
 }
@@ -107,12 +112,18 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary level="app">
         <AuthProvider>
-          <TooltipProvider>
-            <ErrorBoundary level="route">
-              <AppRouter />
-            </ErrorBoundary>
-            <Toaster />
-          </TooltipProvider>
+          {/*
+           * SubscriptionProvider must be nested inside AuthProvider so it can
+           * read the authenticated user ID to configure RevenueCat.
+           */}
+          <SubscriptionProvider>
+            <TooltipProvider>
+              <ErrorBoundary level="route">
+                <AppRouter />
+              </ErrorBoundary>
+              <Toaster />
+            </TooltipProvider>
+          </SubscriptionProvider>
         </AuthProvider>
       </ErrorBoundary>
     </QueryClientProvider>

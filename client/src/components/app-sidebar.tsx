@@ -11,6 +11,8 @@ import {
   Sparkles,
   Megaphone,
   Mail,
+  Crown,
+  Zap,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,7 +28,10 @@ import {
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
+import { useSubscription } from "@/hooks/use-subscription";
+import { cn } from "@/lib/utils";
 
 const mainMenuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -47,6 +52,7 @@ const settingsItems = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const { isPro, openPaywall } = useSubscription();
 
   return (
     <Sidebar>
@@ -110,28 +116,75 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Upgrade CTA – only shown to free plan users */}
+        {!isPro && (
+          <SidebarGroup className="mt-auto">
+            <SidebarGroupContent>
+              <button
+                onClick={openPaywall}
+                className={cn(
+                  "w-full rounded-xl border border-primary/20 bg-primary/5 p-3 text-left",
+                  "hover:bg-primary/10 transition-colors group",
+                )}
+                data-testid="button-sidebar-upgrade"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                    <Crown className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-sm font-semibold">Upgrade to Pro</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Manage unlimited accounts, unlock advanced analytics & more.
+                </p>
+                <div className="mt-2 flex items-center gap-1 text-xs font-medium text-primary">
+                  <Zap className="h-3 w-3" />
+                  View plans
+                </div>
+              </button>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-4">
         <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
-            <AvatarImage src={user?.avatar || ""} />
-            <AvatarFallback className="bg-primary/10 text-primary text-xs">
-              {(user?.name || "??")
-                .split(" ")
-                .slice(0, 2)
-                .map((part) => part[0])
-                .join("")
-                .toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative">
+            <Avatar className="h-8 w-8">
+              <AvatarImage src={user?.avatar || ""} />
+              <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                {(user?.name || "??")
+                  .split(" ")
+                  .slice(0, 2)
+                  .map((part) => part[0])
+                  .join("")
+                  .toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            {isPro && (
+              <div className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary">
+                <Crown className="h-2 w-2 text-primary-foreground" />
+              </div>
+            )}
+          </div>
           <div className="flex flex-col flex-1 min-w-0">
-            <span
-              className="text-sm font-medium truncate"
-              data-testid="text-user-name"
-            >
-              {user?.name}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span
+                className="text-sm font-medium truncate"
+                data-testid="text-user-name"
+              >
+                {user?.name}
+              </span>
+              {isPro && (
+                <Badge
+                  variant="default"
+                  className="h-4 px-1 text-[10px] bg-primary/20 text-primary border-0 shrink-0"
+                >
+                  Pro
+                </Badge>
+              )}
+            </div>
             <span className="text-xs text-muted-foreground truncate">
               {user?.email}
             </span>

@@ -20,8 +20,10 @@ import {
   Palette,
   Shield,
   Camera,
+  CreditCard,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CustomerCenter } from "@/components/customer-center";
 
 export default function SettingsPage() {
   const [notifications, setNotifications] = useState({
@@ -42,7 +44,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full max-w-lg grid-cols-4">
+        <TabsList className="grid w-full max-w-2xl grid-cols-5">
           <TabsTrigger value="profile" className="flex items-center gap-2" data-testid="tab-profile">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -59,8 +61,15 @@ export default function SettingsPage() {
             <Shield className="h-4 w-4" />
             <span className="hidden sm:inline">Security</span>
           </TabsTrigger>
+          <TabsTrigger value="billing" className="flex items-center gap-2" data-testid="tab-billing">
+            <CreditCard className="h-4 w-4" />
+            <span className="hidden sm:inline">Billing</span>
+          </TabsTrigger>
         </TabsList>
 
+        {/* ---------------------------------------------------------------- */}
+        {/* Profile Tab                                                       */}
+        {/* ---------------------------------------------------------------- */}
         <TabsContent value="profile">
           <Card>
             <CardHeader>
@@ -135,6 +144,9 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ---------------------------------------------------------------- */}
+        {/* Notifications Tab                                                 */}
+        {/* ---------------------------------------------------------------- */}
         <TabsContent value="notifications">
           <Card>
             <CardHeader>
@@ -241,6 +253,9 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ---------------------------------------------------------------- */}
+        {/* Appearance Tab                                                    */}
+        {/* ---------------------------------------------------------------- */}
         <TabsContent value="appearance">
           <Card>
             <CardHeader>
@@ -296,6 +311,9 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ---------------------------------------------------------------- */}
+        {/* Security Tab                                                      */}
+        {/* ---------------------------------------------------------------- */}
         <TabsContent value="security">
           <Card>
             <CardHeader>
@@ -357,6 +375,57 @@ export default function SettingsPage() {
                 <Button variant="destructive" data-testid="button-delete-account">
                   Delete Account
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Billing Tab – RevenueCat Customer Center                         */}
+        {/* ---------------------------------------------------------------- */}
+        <TabsContent value="billing" className="space-y-6">
+          {/* Customer Center – shows plan status, manage subscription, restore */}
+          <CustomerCenter />
+
+          {/* Plan comparison card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Plan Comparison</CardTitle>
+              <CardDescription>
+                See what's included in each plan.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-3 pr-4 font-medium text-muted-foreground">Feature</th>
+                      <th className="text-center py-3 px-4 font-medium">Free</th>
+                      <th className="text-center py-3 px-4 font-medium text-primary">Pro</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {[
+                      ["Active accounts", "1", "Unlimited"],
+                      ["Connected platforms", "Unlimited", "Unlimited"],
+                      ["Post scheduling", "✓", "✓"],
+                      ["AI suggestions / month", "5", "Unlimited"],
+                      ["Analytics", "Basic", "Advanced"],
+                      ["Brand workspaces", "—", "✓"],
+                      ["Bulk publishing", "—", "✓"],
+                      ["Newsletter management", "—", "✓"],
+                      ["Ad campaign management", "—", "✓"],
+                      ["Priority support", "—", "✓"],
+                    ].map(([feature, free, pro]) => (
+                      <tr key={feature}>
+                        <td className="py-3 pr-4 text-muted-foreground">{feature}</td>
+                        <td className="py-3 px-4 text-center">{free}</td>
+                        <td className="py-3 px-4 text-center font-medium text-primary">{pro}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
