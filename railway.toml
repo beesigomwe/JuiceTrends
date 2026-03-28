@@ -1,9 +1,9 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install && npm run build && npm run db:auto-migrate"
+buildCommand = "npm install && npm run build"
 
 [deploy]
-startCommand = "npm start"
+startCommand = "npm run db:auto-migrate && npm start"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
