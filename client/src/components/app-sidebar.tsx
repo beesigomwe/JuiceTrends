@@ -6,7 +6,6 @@ import {
   BarChart3,
   Users,
   Settings,
-  Zap,
   LogOut,
   Layers,
   Sparkles,
@@ -52,10 +51,14 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
-            <Zap className="h-5 w-5 text-primary-foreground" />
-          </div>
+        <Link href="/" className="flex min-w-0 items-center gap-3">
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt=""
+            className="h-9 w-auto max-w-[140px] shrink-0 object-contain object-left"
+            width={140}
+            height={36}
+          />
           <div className="flex flex-col">
             <span className="text-sm font-semibold" data-testid="text-app-name">Juice Trends</span>
             <span className="text-xs text-muted-foreground">Marketing Hub</span>

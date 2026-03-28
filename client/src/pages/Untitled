@@ -1,0 +1,7 @@
+<img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt=""
+            className="h-12 w-auto max-w-[200px] object-contain"
+            width={200}
+            height={48}
+          />

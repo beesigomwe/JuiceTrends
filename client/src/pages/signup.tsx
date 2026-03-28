@@ -60,12 +60,18 @@ export default function SignupPage() {
       <div className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-            <Zap className="h-6 w-6 text-primary-foreground" />
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt=""
+              className="h-12 w-auto max-w-[200px] object-contain"
+              width={200}
+              height={56}
+            />
           </div>
           <div className="text-center">
             <h1 className="text-2xl font-bold">Juice Trends</h1>
             <p className="text-sm text-muted-foreground">
-            The dream social media management platform for influencers and brands
+              The dream social media management platform for celebrities, influencers and brands
             </p>
           </div>
         </div>
