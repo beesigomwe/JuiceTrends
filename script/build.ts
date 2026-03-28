@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, copyFile } from "fs/promises";
+import { createRequire } from "module";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -61,7 +62,20 @@ async function buildAll() {
   });
 }
 
-buildAll().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+async function copyAssets() {
+  // connect-pg-simple reads table.sql relative to its own __dirname at runtime.
+  // Because esbuild bundles the server into dist/index.cjs, __dirname becomes
+  // /app/dist at runtime, so we must copy the file there explicitly.
+  const require = createRequire(import.meta.url);
+  const pgSimplePath = require.resolve("connect-pg-simple");
+  const tableSqlSrc = pgSimplePath.replace("index.js", "table.sql");
+  await copyFile(tableSqlSrc, "dist/table.sql");
+  console.log("copied connect-pg-simple/table.sql -> dist/table.sql");
+}
+
+buildAll()
+  .then(() => copyAssets())
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
